@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>无权限 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <div><h1>比赛管理系统</h1></div>
+    </div>
+    <h2 class="error-title">无权限</h2>
+    <p class="step-hint">{{ message }}</p>
+    <a class="btn primary return-btn" href="/">返回首页</a>
+  </main>
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+</body>
+</html>

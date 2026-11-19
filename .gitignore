@@ -1,0 +1,28 @@
+# Local runtime data, credentials and downloaded tunnel tools
+.local/
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local assistant/editor state
+.workbuddy/
+.codex/
+.idea/
+.vscode/
+
+# Logs and database backups
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.bak*
+Thumbs.db
+.DS_Store

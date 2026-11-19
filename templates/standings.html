@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>积分榜单 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · 积分榜单</span>
+    </div>
+    <div class="topbar-actions">
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+    <section class="hero">
+      <p class="hero-kicker">已结束 {{ data.finished_games }} / {{ data.total_games }} 局 · 已完赛 {{ data.finished_matches }} / {{ data.total_matches }} 场次</p>
+      <h1>积分榜单</h1>
+      <p class="hero-sub">追分版只保留两张榜：小组先按胜场、再按净胜分排名，选手记录参与小局获得的分数与最高连得。</p>
+    </section>
+
+    <!-- 1. 小组胜场积分 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>小组胜场积分</h2>
+        <span class="count">统计 6 局打完的场次与已结束的自定义对局</span>
+      </div>
+      <div class="table-wrap">
+        <table class="rank-table">
+          <thead>
+            <tr><th>名次</th><th>组别</th><th>胜场</th><th>已完赛场次</th><th>净胜分</th></tr>
+          </thead>
+          <tbody>
+            {% for row in data.teams %}
+            <tr>
+              <td class="rank-no">{{ row.rank }}</td>
+              <td><strong>{{ row.team }} 组</strong></td>
+              <td>{{ row.wins }}</td>
+              <td>{{ row.matches }}</td>
+              <td class="{% if row.net > 0 %}is-plus{% elif row.net < 0 %}is-minus{% endif %}">{{ row.net_text }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="empty-hint">胜场 = 整场先到 90 分的一方记 1 胜，加已结束的自定义对局胜方各 1 胜；净胜分 = 与三个对手组打完后的最终累计比分差之和（如 90:87 → +3 / −3），加上自定义对局的比分差；已完赛场次 = 正式比分打满 6 局的场次 + 已结束的自定义对局（双方各记 1 场）。名次先按胜场，胜场相同时按净胜分，胜场与净胜分都相同时并列同名次。</p>
+    </section>
+
+    <!-- 2. 选手积分 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>选手积分</h2>
+        <span class="count">双打两人共享本局得分</span>
+      </div>
+      {% if data.players %}
+      <div class="table-wrap">
+        <table class="rank-table">
+          <thead>
+            <tr><th>名次</th><th>选手</th><th>组别</th><th>参与局数</th><th>得分</th><th>最高连得</th></tr>
+          </thead>
+          <tbody>
+            {% for row in data.players %}
+            <tr>
+              <td class="rank-no">{{ loop.index }}</td>
+              <td><strong>{{ row.name }}</strong></td>
+              <td>{{ row.team }} 组</td>
+              <td>{{ row.games }}</td>
+              <td>{{ row.points }}</td>
+              <td>{{ row.best_streak }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="empty-hint">还没有已结束的小局，选手数据会在裁判确认本局结束后出现。</p>
+      {% endif %}
+      <p class="empty-hint">得分 = 参与的已结束小局中己方在该局的增量得分之和，加上自定义对局中本方的最终得分；最高连得 = 按逐分流水计算、单局内己方连续得分的最长一段，换局清零后取各局最大值。排序：得分 → 最高连得 → 参与局数。</p>
+    </section>
+  </main>
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+</body>
+</html>

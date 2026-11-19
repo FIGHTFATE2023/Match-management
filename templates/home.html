@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>首页 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统</span>
+    </div>
+    <form method="post" action="/logout">
+      <button class="btn ghost" type="submit">退出登录</button>
+    </form>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+
+    {% if identity.role == 'teacher' %}
+      <section class="hero teacher-hero">
+        <p class="hero-kicker">教师身份</p>
+        <h1>{{ identity.name }}，欢迎回来</h1>
+        <p class="hero-sub">你可以查看全部四组名单与队长信息。</p>
+      </section>
+    {% elif identity.is_spectator %}
+      <section class="hero spectator-hero">
+        <p class="hero-kicker">{{ identity.name }} · 观众</p>
+        <h1>你是观众</h1>
+        <p class="hero-sub">你可以查看全部四组名单与队长信息。</p>
+      </section>
+    {% else %}
+      <section class="hero {% if identity.is_captain %}captain-hero{% endif %}">
+        <p class="hero-kicker">{{ identity.name }} · 选手 · {{ identity.team }} 组{% if identity.is_captain %} · 队长{% endif %}</p>
+        <h1>你是 {{ identity.team }} 组的{% if identity.is_captain %}队长{% else %}选手{% endif %}</h1>
+        <p class="hero-sub">
+          {% if identity.is_captain %}
+            你负责 {{ identity.team }} 组的 6 局安排，确认后点击发布。
+          {% else %}
+            你可以查看本组成员与本组 6 局出场安排。
+          {% endif %}
+        </p>
+        {% if identity.is_captain %}
+        <a class="btn manage-link" href="/team">管理本组成员</a>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {% if show_lineup %}
+      <section class="panel">
+        <h2>{{ identity.team }} 组成员 <span class="count">{{ members|length }} 人</span></h2>
+        <ul class="member-list">
+          {% for p in members %}
+          <li class="member">
+            <span class="member-name">{{ p.name }}</span>
+            {% if p.is_captain %}<span class="tag tag-captain">队长</span>{% endif %}
+            {% if p.name == identity.name %}<span class="tag tag-me">我</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="panel panel-spaced" id="lineup">
+        <div class="panel-head">
+          <h2>{{ identity.team }} 组 · 6 局出场安排</h2>
+          <span class="tag {% if publication.published %}tag-captain{% else %}tag-me{% endif %}">
+            {{ '已发布' if publication.published else '待发布' }}
+          </span>
+        </div>
+        <p class="empty-hint">
+          {% if publication.published %}
+            本组安排已发布（{{ publication.display_time }} · {{ publication.operator }}）。四组全部发布后，赛程才会公布。
+          {% else %}
+            这套安排适用于本组全部对阵，不随对手变化；由队长确认后发布。
+          {% endif %}
+        </p>
+
+        <div class="table-scroll">
+          <table class="lineup-table">
+            <thead>
+              <tr><th>局次</th><th>项目</th><th>上场人员</th></tr>
+            </thead>
+            <tbody>
+              {% for g in games %}
+                {% set row = lineup_map.get(g.no) %}
+                <tr>
+                  <td class="game-no">第 {{ g.no }} 局</td>
+                  <td>{{ g.event }}</td>
+                  <td class="{% if not row or row.player1 not in roster_names or (row.player2 and row.player2 not in roster_names) %}stale{% endif %}">
+                    {% if row %}{{ row.player1 }}{% if row.player2 %}、{{ row.player2 }}{% endif %}{% else %}未安排{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if identity.is_captain %}
+        <div class="action-bar">
+          {% if lineup_editable %}
+          <button class="btn primary" type="button" id="edit-toggle"
+                  aria-expanded="false" aria-controls="lineup-editor">调整人员安排</button>
+          {% endif %}
+          <form method="post" action="/lineup/publish" class="publish-form">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            {% if publication.published %}
+              <input type="hidden" name="action" value="unpublish">
+              <button class="btn ghost" type="submit"
+                      onclick="return confirm('撤回发布将隐藏未对局信息，点击确认后撤回发布。');">撤回发布</button>
+            {% else %}
+              <input type="hidden" name="action" value="publish">
+              <button class="btn primary" type="submit"
+                      onclick="return confirm('发布后本组安排将锁定，四组全部发布后赛程自动公布。确定发布吗？');">发布本组安排</button>
+            {% endif %}
+          </form>
+        </div>
+        {% endif %}
+
+        {% if lineup_editable %}
+        <div class="lineup-editor" id="lineup-editor" hidden>
+          <p class="edit-hint">混双需 1 男 1 女；男双 / 男单限男生；不能连续两局上场；两局同类项目至少更换 1 人。出场次数超出 1~2 次时仍可保存，但会给出提示。</p>
+          <form method="post" action="/lineup/save" class="edit-form">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            {% for g in games %}
+              {% set row = lineup_map.get(g.no) %}
+              <div class="edit-row">
+                <span class="edit-label">第 {{ g.no }} 局 · {{ g.event }}</span>
+                <select name="p1_{{ g.no }}" aria-label="第 {{ g.no }} 局第一人">
+                  {% for p in members %}
+                    <option value="{{ p.name }}" {% if row and p.name == row.player1 %}selected{% endif %}>{{ p.name }}（{{ p.gender }}）</option>
+                  {% endfor %}
+                </select>
+                {% if g.size == 2 %}
+                <select name="p2_{{ g.no }}" aria-label="第 {{ g.no }} 局第二人">
+                  {% for p in members %}
+                    <option value="{{ p.name }}" {% if row and p.name == row.player2 %}selected{% endif %}>{{ p.name }}（{{ p.gender }}）</option>
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </div>
+            {% endfor %}
+            <div class="edit-actions">
+              <button class="btn primary" type="submit">保存安排</button>
+            </div>
+          </form>
+          <form method="post" action="/lineup/reset" class="reset-form"
+                onsubmit="return confirm('确定恢复本组默认编排吗？');">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn ghost" type="submit">恢复默认编排</button>
+          </form>
+        </div>
+        {% endif %}
+      </section>
+    {% else %}
+      <div class="team-grid">
+        {% for team, players in teams.items() %}
+        <section class="panel">
+          <h2>{{ team }} 组 <span class="count">{{ players|length }} 人</span></h2>
+          <ul class="member-list">
+            {% for p in players %}
+            <li class="member">
+              <span class="member-name">{{ p.name }}</span>
+              {% if p.is_captain %}<span class="tag tag-captain">队长</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </section>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if identity.role == 'student' %}
+    <section class="panel panel-spaced passcode-panel">
+      <h2>我的登录验证码
+        <span class="tag tag-me">{% if pin_custom %}已自定义{% else %}初始验证码{% endif %}</span>
+      </h2>
+      <p class="empty-hint">每个姓名对应一个独立账号，初始验证码统一设置。修改只影响「{{ identity.name }}」这个账号，其他姓名不受影响。</p>
+      <details class="passcode-edit">
+        <summary>修改我的验证码</summary>
+        <form method="post" action="/passcode" class="passcode-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label>当前验证码
+            <input name="old_passcode" type="password" inputmode="numeric" pattern="[0-9]{4}"
+                   maxlength="4" autocomplete="off" required>
+          </label>
+          <label>新验证码
+            <input name="new_passcode" type="password" inputmode="numeric" pattern="[0-9]{4}"
+                   maxlength="4" autocomplete="off" required>
+          </label>
+          <label>确认新验证码
+            <input name="confirm_passcode" type="password" inputmode="numeric" pattern="[0-9]{4}"
+                   maxlength="4" autocomplete="off" required>
+          </label>
+          <button class="btn primary" type="submit">保存新验证码</button>
+        </form>
+      </details>
+    </section>
+    {% endif %}
+
+    <p class="footnote">追分版：同一场次的 6 局比分跨局继承，逐局目标 15 / 30 / 45 / 60 / 75 / 90 分；赛程页查看实时累计比分，积分榜单查看小组胜场积分与选手积分、最高连得。</p>
+    <p class="footnote">作者：LTH</p>
+  </main>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% set ns = namespace(has_error=false) %}
+      {% for category, message in messages %}
+        {% if category == 'error' %}{% set ns.has_error = true %}{% endif %}
+      {% endfor %}
+      <div class="modal-overlay" id="flash-modal" role="dialog" aria-modal="true" aria-labelledby="fm-title">
+        <div class="modal-card {{ 'is-error' if ns.has_error else 'is-ok' }}">
+          <div class="modal-icon" aria-hidden="true">{{ '!' if ns.has_error else '✓' }}</div>
+          <h2 class="modal-title" id="fm-title">{{ '保存失败' if ns.has_error else '保存成功' }}</h2>
+          <ul class="modal-msg-list">
+            {% for category, message in messages %}
+              <li class="modal-msg modal-msg-{{ category }}">
+                <span class="modal-msg-dot" aria-hidden="true"></span><span>{{ message }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+          <button class="btn primary modal-close" type="button">知道了</button>
+        </div>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+  <script>
+    /* 操作结果弹窗：点击按钮 / 点击遮罩 / 按 Esc 关闭 */
+    (function () {
+      var modal = document.getElementById('flash-modal');
+      if (!modal) return;
+      function close() { modal.remove(); }
+      var btn = modal.querySelector('.modal-close');
+      if (btn) btn.addEventListener('click', close);
+      modal.addEventListener('click', function (e) {
+        if (e.target === modal) close();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') close();
+      });
+    })();
+  </script>
+  {% if lineup_editable %}
+  <script>
+    /* 「调整人员安排」和「发布本组安排」是同一排的按钮；点击前者展开/收起编辑区 */
+    (function () {
+      var toggle = document.getElementById('edit-toggle');
+      var editor = document.getElementById('lineup-editor');
+      if (!toggle || !editor) return;
+      toggle.addEventListener('click', function () {
+        var opening = editor.hidden;
+        editor.hidden = !opening;
+        toggle.setAttribute('aria-expanded', String(opening));
+        toggle.textContent = opening ? '收起调整' : '调整人员安排';
+        if (opening) editor.scrollIntoView({ block: 'nearest' });
+      });
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>登录 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="login-page">
+  <main class="login-card" data-initial="{{ initial_step }}">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <div>
+        <h1>比赛管理系统</h1>
+      </div>
+    </div>
+
+    {% if error %}<p class="login-error" role="alert">{{ error }}</p>{% endif %}
+
+    <section id="step-role" class="step">
+      <p class="step-hint">请选择你的身份</p>
+      <div class="choice-grid">
+        <button type="button" class="choice" data-next="student">
+          <span class="choice-title">我是选手/观众</span>
+          <span class="choice-desc">输入真实姓名登录</span>
+        </button>
+        <button type="button" class="choice" data-next="teacher">
+          <span class="choice-title">我是老师</span>
+          <span class="choice-desc">选择教师身份</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="step-teacher" class="step" hidden>
+      <p class="step-hint">请选择老师</p>
+      <form method="post" action="/login" class="stack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="role" value="teacher">
+        <div class="teacher-grid">
+          <button class="btn teacher-btn" type="submit" name="teacher" value="肖老师">肖老师</button>
+          <button class="btn teacher-btn" type="submit" name="teacher" value="王老师">王老师</button>
+          <button class="btn teacher-btn" type="submit" name="teacher" value="刘老师">刘老师</button>
+        </div>
+      </form>
+      <button type="button" class="link-btn back-btn" data-back>← 返回选择身份</button>
+    </section>
+
+    <section id="step-student" class="step" hidden>
+      <p class="step-hint">请输入真实姓名</p>
+      <form method="post" action="/login" class="stack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="role" value="student">
+        <label for="student-name" class="sr-only">真实姓名</label>
+        <input id="student-name" name="name" type="text" autocomplete="name"
+               maxlength="20" value="{{ name_value }}" required>
+        <label for="student-passcode" class="sr-only">4 位验证码</label>
+        <input id="student-passcode" name="passcode" type="password" inputmode="numeric"
+               pattern="[0-9]{4}" maxlength="4" autocomplete="off"
+               placeholder="4 位验证码" required>
+        <button class="btn primary" type="submit">确认登录</button>
+      </form>
+      <button type="button" class="link-btn back-btn" data-back>← 返回选择身份</button>
+    </section>
+  </main>
+  <script src="/static/login.js?v={{ asset_v }}"></script>
+</body>
+</html>

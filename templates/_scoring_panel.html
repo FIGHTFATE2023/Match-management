@@ -1,0 +1,96 @@
+{# 裁判台记分面板片段：显式 ?ref= 时放在 hero 之后；自动恢复时放在页面最顶部。 #}
+<section class="panel scoring-panel{% if resumed %} is-resumed{% endif %}{% if active.is_custom %} is-custom-mode{% endif %}" id="scoring-panel"
+         data-ref="{{ active.ref }}"
+         data-is-custom="{{ '1' if active.is_custom else '0' }}"
+         data-custom-id="{{ active.custom_id or '' }}"
+         data-team-a="{{ active.team_a }}" data-team-b="{{ active.team_b }}"
+         data-target="{{ active.target }}" data-switch-at="{{ active.switch_at }}"
+         data-need-switch="{{ '1' if active.can_score and active.need_switch else '0' }}"
+         data-reached-end="{{ '1' if active.can_score and active.reached_end else '0' }}">
+  {% if resumed %}
+  <div class="resume-bar" role="status">
+    <span class="resume-dot" aria-hidden="true"></span>
+    <span><strong>继续记分</strong> · 已自动回到你正在执裁的这一局，当前累计 {{ active.score_a }} : {{ active.score_b }}，比分与换边状态均已保留</span>
+  </div>
+  {% endif %}
+  <div class="panel-head">
+    <h2>{% if active.is_custom %}自定义对局 · {{ active.event }}{% else %}第 {{ active.no }} 局 · {{ active.event }}{% endif %}</h2>
+    <span class="count">{{ active.team_a }} 组 对 {{ active.team_b }} 组</span>
+    <span class="count" id="scoring-state">
+      {{ '已结束 · ' ~ active.winner ~ ' 组胜' if active.state == 'finished' else ('进行中' if active.state == 'running' else '未开赛') }}
+    </span>
+  </div>
+
+  {% if active.is_custom %}
+  <div class="rule-hint custom-rule-hint">
+    <span class="custom-mode-tag">自定义模式</span>
+    <span>本局目标 <strong>{{ active.target }}</strong> 分</span>
+    {% if active.win_by_two %}<span>连胜两分（需净胜 2 分）</span>{% else %}<span>先到目标后确认结束</span>{% endif %}
+    <span>从 0:0 开始 · 不设换边</span>
+    <span>胜方额外记 1 个小组胜场并计入榜单</span>
+  </div>
+  {% else %}
+  <div class="rule-hint">
+    <span>本局目标 <strong>{{ active.target }}</strong> 分</span>
+    <span>换边点 <strong>{{ active.switch_at }}</strong> 分</span>
+    <span>承接上局 <strong>{{ active.start_a }} : {{ active.start_b }}</strong></span>
+    <span>累计比分跨局继承、不归零</span>
+  </div>
+  {% endif %}
+
+  {% if active.can_score %}
+  <div class="score-buttons {% if active.switched %}is-swapped{% endif %}" id="score-buttons">
+    <button class="score-btn" type="button" data-team="{{ active.team_a }}">
+      <span class="score-team">{{ active.team_a }} 组</span>
+      <span class="score-players">
+        {% for name in active.players_a %}
+        <span class="score-player">{{ name }}</span>
+        {% else %}
+        <span class="score-player is-missing">待安排</span>
+        {% endfor %}
+      </span>
+      <strong class="score-number" id="score-a">{{ active.score_a }}</strong>
+      <span class="score-tip">点一次加 1 分</span>
+    </button>
+    <span class="score-divider" aria-hidden="true">:</span>
+    <button class="score-btn" type="button" data-team="{{ active.team_b }}">
+      <span class="score-team">{{ active.team_b }} 组</span>
+      <span class="score-players">
+        {% for name in active.players_b %}
+        <span class="score-player">{{ name }}</span>
+        {% else %}
+        <span class="score-player is-missing">待安排</span>
+        {% endfor %}
+      </span>
+      <strong class="score-number" id="score-b">{{ active.score_b }}</strong>
+      <span class="score-tip">点一次加 1 分</span>
+    </button>
+  </div>
+  <div class="score-actions">
+    <button class="btn ghost" type="button" id="undo-btn">← 回退一分</button>
+    <span class="count" id="score-hint">{% if active.is_custom %}从 0:0 开始计分；{% if active.win_by_two %}达到 {{ active.target }} 分且净胜 2 分{% else %}有一方达到 {{ active.target }} 分{% endif %}后需二次确认，点「返回并回退一分」可继续记分{% else %}显示的是本场次累计比分；有一方达到 {{ active.target }} 分即结束本局{% endif %}</span>
+  </div>
+  {% elif active.held_by_other %}
+  <p class="empty-hint">这一局由 {{ active.referee }} 担任裁判，当前为只读。</p>
+  {% elif active.state == 'idle' %}
+  <p class="empty-hint">这一局尚未开赛。开赛后将从 <strong>{{ active.start_a }} : {{ active.start_b }}</strong> 继续追分，打到任一方累计 {{ active.target }} 分结束本局。</p>
+  <form class="ref-start-form js-start-form panel-start-form" data-ref="{{ active.ref }}"{% if active.can_start is not defined or not active.can_start %} hidden{% endif %}>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="sr-only" for="panel-court-{{ active.ref }}">场地序号</label>
+    <input id="panel-court-{{ active.ref }}" class="court-input" name="court" type="text"
+           inputmode="numeric" maxlength="20" placeholder="场地序号" required>
+    <button class="btn small primary" type="submit">确认开始第 {{ active.no }} 局</button>
+  </form>
+  <p class="empty-hint js-lock-hint"{% if active.can_start is defined and active.can_start %} hidden{% endif %}>这一局尚未解锁：{{ active.lock_reason }}。按顺序完成上一局后，再回到这里开赛。</p>
+  {% else %}
+  <div class="final-score">{{ active.score_a }} : {{ active.score_b }}</div>
+  {% if active.is_custom %}
+  <p class="empty-hint">自定义对局已结束，{{ active.winner }} 组获胜，结果已计入榜单。如需修正，可回退末分重记。</p>
+  <div class="score-actions">
+    <button class="btn ghost" type="button" id="undo-btn">← 回退一分</button>
+  </div>
+  {% else %}
+  <p class="empty-hint">本局已结束，累计比分已锁定；下一局将继承这个比分继续追分。</p>
+  {% endif %}
+  {% endif %}
+</section>

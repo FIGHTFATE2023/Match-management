@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>成员管理 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · {{ identity.team }} 组</span>
+    </div>
+    <div class="topbar-actions">
+      <a class="btn ghost" href="/">返回首页</a>
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hero captain-hero">
+      <p class="hero-kicker">{{ identity.name }} · {{ identity.team }} 组队长</p>
+      <h1>管理本组成员</h1>
+      <p class="hero-sub">可以替换或删除本组队员；替换后本组 6 局安排、赛程与账号会同步换成新队员，若本组已发布则会自动撤回发布。</p>
+    </section>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <p class="flash flash-{{ category }}" role="status">{{ message }}</p>
+    {% endfor %}
+
+    <section class="panel">
+      <h2>{{ identity.team }} 组成员 <span class="count">{{ members|length }} 人</span></h2>
+      <ul class="manage-list">
+        {% for p in members %}
+        <li class="manage-row">
+          <div class="manage-head">
+            <div class="manage-info">
+              <span class="member-name">{{ p.name }}</span>
+              <span class="tag tag-gender">{{ p.gender }}</span>
+              {% if p.is_captain %}<span class="tag tag-captain">队长</span>{% endif %}
+            </div>
+            {% if not p.is_captain %}
+            <form method="post" action="/team/delete" onsubmit="return confirm('确定删除该队员吗？');">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="target" value="{{ p.name }}">
+              <button class="btn danger" type="submit">删除</button>
+            </form>
+            {% endif %}
+          </div>
+
+          {% if not p.is_captain %}
+          <details class="replace">
+            <summary>替换队员</summary>
+            <form method="post" action="/team/replace" class="replace-form">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="target" value="{{ p.name }}">
+              <label>新队员姓名
+                <input type="text" name="new_name" maxlength="20" autocomplete="off" required>
+              </label>
+              <label>性别
+                <select name="gender">
+                  <option value="男" {% if p.gender == '男' %}selected{% endif %}>男</option>
+                  <option value="女" {% if p.gender == '女' %}selected{% endif %}>女</option>
+                </select>
+              </label>
+              <button class="btn primary" type="submit">保存</button>
+              <p class="edit-hint">替换会同步更新：本组 6 局安排与赛程里该队员出现的位置、登录验证码账号（新队员用初始 1234，旧姓名恢复初始码后仍可登录为观众）。若本组安排已发布（赛程已公布），替换后会<strong>自动撤回本组发布</strong>，未开赛的比赛暂时隐藏（已开赛的仍显示），请调整安排后重新发布。</p>
+            </form>
+          </details>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="panel panel-spaced">
+      <h2>最近变更 <span class="count">来自数据库</span></h2>
+      {% if changes %}
+      <ul class="change-list">
+        {% for c in changes %}
+        <li class="change-row">
+          <span class="change-time">{{ c.display_time }}</span>
+          <span class="change-action {{ 'change-replace' if c.action == 'replace' else 'change-delete' }}">{{ '替换' if c.action == 'replace' else '删除' }}</span>
+          <span class="change-detail">
+            {%- if c.action == 'replace' -%}
+              {{ c.old_name }} → {{ c.new_name }}{% if c.gender %}（{{ c.gender }}）{% endif %}
+            {%- else -%}
+              {{ c.old_name }}
+            {%- endif -%}
+          </span>
+          <span class="change-operator">{{ c.operator }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-hint">暂无变更记录</p>
+      {% endif %}
+    </section>
+
+    <p class="footnote">替换会同步本组 6 局安排、赛程与验证码账号；被替换或删除的队员仍可用原姓名登录，身份显示为观众。</p>
+  </main>
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+</body>
+</html>

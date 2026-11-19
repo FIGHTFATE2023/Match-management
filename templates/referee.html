@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>裁判台 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  <meta name="csrf-token" content="{{ csrf }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · 裁判台</span>
+    </div>
+    <div class="topbar-actions">
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+    {# 自动恢复：本人正在执裁的局，记分界面直接放在导航下方的首个可见区域 #}
+    {% if active and resumed %}
+      {% include "_scoring_panel.html" %}
+    {% endif %}
+    <section class="hero">
+      <p class="hero-kicker">{{ identity.name }} · 裁判</p>
+      <h1>裁判台</h1>
+      <p class="hero-sub">追分版：一个场次的 6 局比分全程继承，按局次顺序开赛；点两组大按钮逐分记分，误操作可随时回退。</p>
+    </section>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <p class="flash flash-{{ category }}" role="status">{{ message }}</p>
+    {% endfor %}
+
+    {% if pending %}
+      <section class="panel">
+        <p class="empty-hint">四组安排需全部由队长发布后，裁判才能开始记分。</p>
+      </section>
+    {% else %}
+
+      {# 显式 ?ref= 进入：记分面板仍保持在原有位置（hero 之后、列表之前） #}
+      {% if active and not resumed %}
+      {% include "_scoring_panel.html" %}
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>选择要记分的局</h2>
+          <span class="count">共 36 局 · 逐局目标 15 / 30 / 45 / 60 / 75 / 90</span>
+        </div>
+        {% for m in groups %}
+        <div class="ref-group">
+          <div class="ref-group-head">{{ m.team_a }} 组 对 {{ m.team_b }} 组</div>
+          {% for g in m.games %}
+          <div class="ref-row {% if g.state == 'running' %}is-running{% elif g.state == 'finished' %}is-finished{% endif %}">
+            <span class="ref-no">第 {{ g.no }} 局</span>
+            <span class="ref-event">{{ g.event }}</span>
+            <span class="ref-target">目标 {{ g.target }} 分</span>
+            <span class="ref-players">{{ g.players_a|join(' / ') if g.players_a else '待安排' }} 对 {{ g.players_b|join(' / ') if g.players_b else '待安排' }}</span>
+            <div class="ref-status">
+              {% if g.state == 'idle' %}
+              <form class="ref-start-form js-start-form" data-ref="{{ g.ref }}"{% if g.can_start is not defined or not g.can_start %} hidden{% endif %}>
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label class="sr-only" for="court-{{ g.ref }}">场地序号</label>
+                <input id="court-{{ g.ref }}" class="court-input" name="court" type="text"
+                       inputmode="numeric" maxlength="20" placeholder="场地序号" required>
+                <button class="btn small primary" type="submit">确认开始</button>
+              </form>
+              <span class="state-chip is-locked js-lock-hint"{% if g.can_start is defined and g.can_start %} hidden{% endif %}>{{ g.lock_reason }}</span>
+              {% elif g.state == 'running' %}
+              <span class="state-chip is-live">进行中 {{ g.score_a }} : {{ g.score_b }}</span>
+              <a class="btn small" href="/referee?ref={{ g.ref }}">进入记分</a>
+              {% else %}
+              <span class="state-chip is-done">已结束 {{ g.score_a }} : {{ g.score_b }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <p class="footnote">追分版：第 1 局从 0:0 打到任一方 15 分结束；第 2 局继承该比分继续打到 30 分，依次到 90 分整场完赛。落后方也必须自己把累计分追到本局目标才可能结束本局。达到本局换边点（8 / 23 / 38 / 53 / 68 / 83）时提示双方换边；不记录胜场。</p>
+
+    <section class="panel custom-panel" id="custom-panel">
+      <div class="panel-head">
+        <h2>自定义对局</h2>
+        <span class="count">额外胜场计入榜单</span>
+      </div>
+      <p class="empty-hint">独立于正式 6 场循环赛，可手动发起任意两组之间的对局。结束后胜方额外记 1 个小组胜场、按最终比分差计入两组净胜分，上场人员按最终得分计入选手积分；比赛记录同时出现在赛程页。</p>
+
+      <form id="custom-create-form" class="custom-create-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="custom-form-grid">
+          <label>甲组
+            <select name="team_a" id="custom-team-a">
+              {% for t in custom_teams %}<option value="{{ t }}">{{ t }} 组</option>{% endfor %}
+            </select>
+          </label>
+          <label>乙组
+            <select name="team_b" id="custom-team-b">
+              {% for t in custom_teams %}<option value="{{ t }}"{% if loop.index == 2 %} selected{% endif %}>{{ t }} 组</option>{% endfor %}
+            </select>
+          </label>
+          <label>对局类型
+            <select name="event" id="custom-event">
+              {% for e in custom_events %}<option value="{{ e.event }}" data-size="{{ e.size }}">{{ e.event }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>目标分
+            <input type="number" name="target" value="21" min="1" max="200" inputmode="numeric" required>
+          </label>
+          <label class="custom-check"><input type="checkbox" name="win_by_two" value="1"> 连胜两分</label>
+        </div>
+        <div class="custom-players-grid">
+          <div>
+            <p class="custom-side-title">甲组上场人员</p>
+            <div id="custom-players-a" class="custom-players"></div>
+          </div>
+          <div>
+            <p class="custom-side-title">乙组上场人员</p>
+            <div id="custom-players-b" class="custom-players"></div>
+          </div>
+        </div>
+        <div class="custom-form-actions">
+          <button class="btn primary" type="submit">创建对局</button>
+          <span class="custom-msg" id="custom-create-msg" role="status" hidden></span>
+        </div>
+      </form>
+
+      <script id="custom-roster" type="application/json">{{ custom_teams | tojson }}</script>
+
+      <div class="custom-list" id="custom-list">
+        {% if custom_matches %}
+          {% for cm in custom_matches %}
+          <article class="custom-card" data-cid="{{ cm.id }}" data-state="{{ cm.state }}" data-v="{{ cm.rallies|length }}">
+            <div class="custom-card-head">
+              <strong>{{ cm.team_a }} 组 <em>对</em> {{ cm.team_b }} 组</strong>
+              <span class="custom-mode-tag">自定义模式</span>
+              <span class="custom-tag">{{ cm.event }} · 目标 {{ cm.target }}{% if cm.win_by_two %} · 连胜两分{% else %} · 先到即胜{% endif %}</span>
+              <span class="custom-state" data-role="custom-state">{% if cm.state == 'running' %}{{ '待确认结果' if cm.winner else '进行中' }}{% else %}已结束 · 胜方 {{ cm.winner }} 组{% endif %}</span>
+            </div>
+            <p class="custom-players-line">{{ cm.players_a|replace('|', ' / ') }} <em>对</em> {{ cm.players_b|replace('|', ' / ') }}</p>
+            <div class="custom-score">
+              <b data-role="cs-a">{{ cm.score_a }}</b><span>:</span><b data-role="cs-b">{{ cm.score_b }}</b>
+            </div>
+            <div class="custom-actions">
+              <a class="btn small primary" href="/referee?custom={{ cm.id }}">{% if cm.state == 'running' %}{{ '确认 / 修正' if cm.winner else '进入记分' }}{% else %}查看 / 修正{% endif %}</a>
+            </div>
+            {% if cm.referee == identity.name %}
+            <button class="btn small ghost custom-delete" type="button" data-cdelete>删除记录</button>
+            {% endif %}
+            <p class="custom-meta">由 {{ cm.referee }} 发起 · 从 0:0 计分、不设换边 · 胜方额外记 1 个小组胜场并计入榜单{% if cm.finished_at %} · 已计入榜单{% endif %}</p>
+          </article>
+          {% endfor %}
+        {% else %}
+          <p class="empty-hint" id="custom-empty">暂无自定义对局记录。</p>
+        {% endif %}
+      </div>
+    </section>
+  </main>
+
+  {% if active and active.can_score %}
+  <div class="modal-overlay" id="switch-modal" role="dialog" aria-modal="true" aria-labelledby="sw-title" hidden>
+    <div class="modal-card">
+      <div class="modal-icon" aria-hidden="true">⇄</div>
+      <h2 class="modal-title" id="sw-title">请换边</h2>
+      <p class="modal-text" id="switch-text">有一方达到本局换边点，请提示双方换边。确认后，裁判界面的左右两侧将完成对调。</p>
+      <button class="btn primary modal-close" type="button" id="switch-confirm">已完成对调，继续记分</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="finish-modal" role="dialog" aria-modal="true" aria-labelledby="fn-title" hidden>
+    <div class="modal-card">
+      <div class="modal-icon" aria-hidden="true">✓</div>
+      <h2 class="modal-title" id="fn-title">本局结束</h2>
+      <p class="modal-text" id="finish-text">有一方达到本局目标分，请确认结果。</p>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" id="finish-confirm">确认本局结束</button>
+        <button class="btn ghost" type="button" id="finish-back">返回修改比分</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not pending %}<script src="/static/referee.js?v={{ asset_v }}"></script>{% endif %}
+  <script src="/static/custom_match.js?v={{ asset_v }}"></script>
+</body>
+</html>

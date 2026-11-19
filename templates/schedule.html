@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>赛程 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · 赛程</span>
+    </div>
+    <div class="topbar-actions">
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+    <section class="hero">
+      <p class="hero-kicker">追分版 · 4 组单循环 · 每场 6 局</p>
+      <h1>赛程</h1>
+      {% if pending %}
+        <p class="hero-sub">四组安排需全部由队长发布后才公布赛程。</p>
+      {% elif partial %}
+        <p class="hero-sub">有小组撤回发布：正在进行与已结束的比赛照常显示，未开始的比赛暂时隐藏；四组全部发布后恢复完整赛程。</p>
+      {% else %}
+        <p class="hero-sub">一个场次的 6 局共用累计比分、跨局继承；逐局目标 15 / 30 / 45 / 60 / 75 / 90 分，任一方先到目标即结束本局。</p>
+      {% endif %}
+    </section>
+
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <p class="flash flash-{{ category }}" role="status">{{ message }}</p>
+    {% endfor %}
+
+    {% if pending %}
+      <section class="panel">
+        <div class="panel-head">
+          <h2>发布进度</h2>
+          <span class="count">{{ published_count }} / 4 组</span>
+        </div>
+        <div class="progress-grid">
+          {% for team, item in status.items() %}
+          <div class="progress-chip {% if item.published %}is-done{% endif %}">
+            <strong>{{ team }} 组</strong>
+            <span>{{ '已发布' if item.published else '待发布' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="empty-hint">全部发布后才会显示每局对阵与上场人员，当前不公布任何赛程信息。</p>
+      </section>
+    {% else %}
+      {% if partial %}
+      <section class="panel">
+        <div class="panel-head">
+          <h2>发布进度</h2>
+          <span class="count">{{ published_count }} / 4 组</span>
+        </div>
+        <div class="progress-grid">
+          {% for team, item in status.items() %}
+          <div class="progress-chip {% if item.published %}is-done{% endif %}">
+            <strong>{{ team }} 组</strong>
+            <span>{{ '已发布' if item.published else '待发布' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="empty-hint">有小组撤回发布后，未开赛的比赛暂时隐藏；已开赛（进行中 / 已结束）的比赛仍照常显示。</p>
+      </section>
+      {% endif %}
+      {% if not schedule_matches %}
+      <section class="panel">
+        <p class="empty-hint">当前没有已开赛的比赛；四组全部发布后将显示完整赛程。</p>
+      </section>
+      {% endif %}
+      <section class="panel live-zone" id="live-zone" hidden>
+        <div class="panel-head">
+          <h2>正在进行</h2>
+          <span class="count" id="live-count">0 局</span>
+        </div>
+        <div class="game-grid" id="live-grid"></div>
+      </section>
+
+      <section class="panel filter-panel">
+        <div class="panel-head">
+          <h2>筛选</h2>
+          <span class="count" id="filter-count">{{ total_games }} 局</span>
+          <button class="btn ghost filter-toggle" type="button" id="filter-toggle" aria-expanded="true">缩小</button>
+        </div>
+        <div id="filter-extra">
+          <div class="filter-row">
+            <span class="filter-label">组别</span>
+            <div class="check-group" data-filter="team">
+              {% for team in status %}
+              <label class="check-chip">
+                <input type="checkbox" value="{{ team }}">
+                <span>{{ team }} 组</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="filter-row">
+            <span class="filter-label">类别</span>
+            <div class="check-group" data-filter="event">
+              {% for event in events %}
+              <label class="check-chip">
+                <input type="checkbox" value="{{ event }}">
+                <span>{{ event }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="filter-row filter-search">
+          <label class="search-field">
+            <span class="sr-only">搜索队员姓名、组别或类别</span>
+            <input id="filter-q" type="search" placeholder="搜索队员姓名、组别或类别"
+                   autocomplete="off" spellcheck="false">
+          </label>
+          <button class="btn ghost" type="button" id="filter-clear">清除筛选</button>
+        </div>
+      </section>
+
+      <div id="match-list">
+        {% for m in schedule_matches %}
+        <section class="panel match-panel" data-match-id="{{ m.match_id }}" data-teams="{{ m.team_a }} {{ m.team_b }}">
+          <div class="match-head">
+            <h2>{{ m.team_a }} 组 <em>VS</em> {{ m.team_b }} 组</h2>
+            <div class="match-result" data-role="match-result" hidden>
+              <span class="finish-tag" data-role="match-tag">已完赛</span>
+              <span class="finish-label" data-role="finish-label">累计比分</span>
+              <strong class="finish-score" data-role="finish-score"></strong>
+              <span class="finish-net" data-role="finish-net" hidden></span>
+            </div>
+            <span class="count match-count">{{ m.games|length }} 局</span>
+          </div>
+          <div class="game-grid">
+            {% for g in m.games %}
+            {% set ref = m.match_id ~ '-' ~ g.no %}
+            <article class="game-card event-{{ g.event_key }}"
+                     data-ref="{{ ref }}"
+                     data-game-no="{{ g.no }}" data-target="{{ 15 * g.no }}"
+                     data-team-a="{{ m.team_a }}" data-team-b="{{ m.team_b }}"
+                     data-teams="{{ m.team_a }} {{ m.team_b }}"
+                     data-event="{{ g.event }}"
+                     data-search="{{ m.team_a }} 组 {{ m.team_b }} 组 {{ m.team_a }} {{ m.team_b }} {{ g.event }} {{ g.players_a|join(' ') }} {{ g.players_b|join(' ') }}">
+              <div class="game-card-head">
+                <span class="game-index">第 {{ g.no }} 局</span>
+                <span class="game-event">{{ g.event }}</span>
+                <span class="game-state" data-role="state" hidden></span>
+              </div>
+              <div class="live-meta" data-role="live-meta" hidden></div>
+              <div class="game-card-body">
+                <div class="game-side">
+                  <span class="side-team">{{ m.team_a }} 组</span>
+                  {% for name in g.players_a %}
+                  <span class="side-player">{{ name }}<span class="player-gain" data-role="player-gain" hidden></span></span>
+                  {% else %}
+                  <span class="side-player is-missing">待安排</span>
+                  {% endfor %}
+                </div>
+                <span class="game-vs" data-role="vs">VS</span>
+                <div class="game-side game-side-right">
+                  <span class="side-team">{{ m.team_b }} 组</span>
+                  {% for name in g.players_b %}
+                  <span class="side-player">{{ name }}<span class="player-gain" data-role="player-gain" hidden></span></span>
+                  {% else %}
+                  <span class="side-player is-missing">待安排</span>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="score-strip" data-role="score-strip" hidden>
+                <div class="score-total" data-role="score-total">
+                  <strong data-role="score-a">0</strong><span>:</span><strong data-role="score-b">0</strong>
+                </div>
+                <span class="score-target" data-role="score-target">目标 {{ 15 * g.no }} 分</span>
+                <div class="rally-grid" data-role="rally"></div>
+              </div>
+              {% if ref in editable_refs %}
+              {% set mine_a = identity.team == m.team_a %}
+              {% set mine_lineup = g.lineup_a if mine_a else g.lineup_b %}
+              <details class="lineup-edit" data-role="lineup-edit">
+                <summary>调整本局人员</summary>
+                <form method="post" action="/lineup/match-save" class="lineup-edit-form">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="match_id" value="{{ m.match_id }}">
+                  <input type="hidden" name="game_no" value="{{ g.no }}">
+                  <label>上场人员
+                    <select name="player1" required>
+                      {% for p in members_map.get(identity.team, []) %}
+                      <option value="{{ p.name }}" {% if mine_lineup.player1 == p.name %}selected{% endif %}>{{ p.name }}（{{ p.gender }}）</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  {% if g.event != '男单' %}
+                  <label>第二人
+                    <select name="player2" required>
+                      {% for p in members_map.get(identity.team, []) %}
+                      <option value="{{ p.name }}" {% if mine_lineup.player2 == p.name %}selected{% endif %}>{{ p.name }}（{{ p.gender }}）</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                  {% endif %}
+                  <div class="lineup-new-player">
+                    <span class="new-player-title">新增队员（可选）</span>
+                    <div class="new-player-row">
+                      <input type="text" name="new_player" maxlength="12" placeholder="新队员姓名" autocomplete="off">
+                      <select name="new_gender" aria-label="新队员性别">
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                      </select>
+                      {% if g.event != '男单' %}
+                      <select name="new_slot" aria-label="替换位置">
+                        <option value="1">替换第1人</option>
+                        <option value="2">替换第2人</option>
+                      </select>
+                      {% else %}
+                      <input type="hidden" name="new_slot" value="1">
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="lineup-edit-actions">
+                    <button class="btn primary small" type="submit">保存本局</button>
+                    <button class="btn ghost small" type="submit" formaction="/lineup/match-reset">恢复默认</button>
+                  </div>
+                  <p class="edit-hint">
+                    只改本场这一局；已开赛局与其他场次不受影响。
+                    {% if g.event == '混双' %}混双须 1 男 1 女。{% else %}本局不限男女，也不受连续上场限制。{% endif %}
+                    填了新队员姓名会自动加入本组名单，初始验证码 1234。
+                  </p>
+                </form>
+              </details>
+              {% endif %}
+            </article>
+            {% endfor %}
+          </div>
+        </section>
+        {% endfor %}
+        <p class="empty-hint filter-empty" id="filter-empty" hidden>没有符合条件的局，换个条件或清除筛选试试。</p>
+      </div>
+    {% endif %}
+
+    <section class="panel custom-record-panel" id="custom-record-panel">
+      <div class="panel-head">
+        <h2>自定义对局</h2>
+        <span class="count">{{ custom_matches|length }} 场 · 胜方额外计 1 个小组胜场</span>
+      </div>
+      {% if custom_matches %}
+      <p class="empty-hint">独立于正式 6 场循环赛：从 0:0 计分、不计承接分；进行中的对局会自动进入顶部「正在进行」，结束后胜方额外记 1 个小组胜场，比分差与选手得分同步计入榜单。</p>
+      <div class="game-grid" id="custom-game-grid">
+        {% for cm in custom_matches %}
+        {% set cref = 'c' ~ cm.id %}
+        <article class="game-card event-inline custom-game-card{% if cm.state == 'running' %} is-live{% elif cm.state == 'finished' %} is-done{% endif %}"
+                 data-ref="{{ cref }}" data-custom="1" data-teams="{{ cm.team_a }} {{ cm.team_b }}"
+                 data-event="{{ cm.event }}" data-target="{{ cm.target }}"
+                 data-search="自定义 {{ cm.team_a }} 组 {{ cm.team_b }} 组 {{ cm.event }} {{ cm.players_a|replace('|', ' ') }} {{ cm.players_b|replace('|', ' ') }}">
+          <div class="game-card-head">
+            <span class="game-index">自定义</span>
+            <span class="game-event">{{ cm.event }}</span>
+            <span class="game-state" data-role="state"{% if cm.state == 'idle' %} hidden{% endif %}>{% if cm.state == 'running' %}正在进行中{% elif cm.state == 'finished' %}{{ cm.winner }} 组胜{% endif %}</span>
+          </div>
+          <div class="live-meta" data-role="live-meta"{% if cm.state != 'running' %} hidden{% endif %}>
+            {% if cm.state == 'running' %}<span>裁判：{{ cm.referee }}</span><span>从 0:0 起计分</span>{% endif %}
+          </div>
+          <div class="game-card-body">
+            <div class="game-side">
+              <span class="side-team">{{ cm.team_a }} 组</span>
+              {% for name in cm.players_a_list %}
+              <span class="side-player">{{ name }}<span class="player-gain" data-role="player-gain"{% if cm.state == 'idle' %} hidden{% endif %}>{% if cm.state != 'idle' %}+{{ cm.gain_a }}{% endif %}</span></span>
+              {% endfor %}
+            </div>
+            <span class="game-vs" data-role="vs">{% if cm.state == 'finished' %}{{ cm.score_a }} : {{ cm.score_b }}{% else %}VS{% endif %}</span>
+            <div class="game-side game-side-right">
+              <span class="side-team">{{ cm.team_b }} 组</span>
+              {% for name in cm.players_b_list %}
+              <span class="side-player">{{ name }}<span class="player-gain" data-role="player-gain"{% if cm.state == 'idle' %} hidden{% endif %}>{% if cm.state != 'idle' %}+{{ cm.gain_b }}{% endif %}</span></span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="score-strip" data-role="score-strip"{% if cm.state == 'idle' %} hidden{% endif %}>
+            <div class="score-total" data-role="score-total"{% if cm.state == 'finished' %} hidden{% endif %}>
+              <strong data-role="score-a">{{ cm.score_a }}</strong><span>:</span><strong data-role="score-b">{{ cm.score_b }}</strong>
+            </div>
+            <span class="score-target" data-role="score-target">目标 {{ cm.target }} 分 · {% if cm.win_by_two %}赛点连得两分{% else %}先到先胜{% endif %}{% if cm.state == 'finished' %} · 已计入榜单{% endif %}</span>
+            <div class="rally-grid" data-role="rally"></div>
+          </div>
+          <p class="custom-card-meta">由 {{ cm.referee }} 发起{% if cm.finished_at %} · 已计入榜单{% endif %}</p>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty-hint">暂无自定义对局记录。</p>
+      {% endif %}
+    </section>
+
+    <p class="footnote">追分版规则：同一场次的 6 局共用一份累计比分，比分跨局继承、绝不归零；每张卡片显示当前累计比分与本局目标分（15 / 30 / 45 / 60 / 75 / 90），任一方累计分先达到本局目标即结束该局。8 / 23 / 38 / 53 / 68 / 83 分时双方换边。场次开赛后标记「正在进行中」，6 局全部打完改为「已完赛」并显示最终累计比分与净胜分；不记录胜场、不设竞猜。</p>
+  </main>
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+  {% if not pending %}<script src="/static/schedule.js?v={{ asset_v }}"></script>{% endif %}
+  {# live.js 统一渲染正式局与自定义对局：无 live-zone 时会安全跳过，故始终加载。 #}
+  <script src="/static/live.js?v={{ asset_v }}"></script>
+</body>
+</html>
