@@ -195,6 +195,80 @@ class AdminTests(unittest.TestCase):
         after = int(self.scalar("SELECT value FROM meta WHERE key='revision'"))
         self.assertEqual(before + 1, after)
 
+    # ---------- 观众账号清理 ----------
+    def _seed_spectator_traces(self, name, guesses=0, logins=0, pin=False):
+        with db.connection() as conn:
+            for i in range(guesses):
+                conn.execute(
+                    "INSERT OR IGNORE INTO guesses (name, kind, ref, pick, stake, created_at, updated_at)"
+                    " VALUES (?, 'game', ?, 'A', 1, datetime('now'), datetime('now'))",
+                    (name, f"99-{i + 1}"),
+                )
+            for _ in range(logins):
+                conn.execute(
+                    "INSERT INTO login_logs (occurred_at, role, identity, team, outcome)"
+                    " VALUES (datetime('now'), 'student', ?, NULL, 'ok_spectator')",
+                    (name,),
+                )
+            if pin:
+                conn.execute(
+                    "INSERT OR REPLACE INTO student_pins (name, pass_hash, pin_version, updated_at)"
+                    " VALUES (?, 'x', 2, datetime('now'))",
+                    (name,),
+                )
+
+    def test_spectator_rows_exclude_roster(self):
+        player = self.scalar('SELECT name FROM players LIMIT 1')
+        teacher = self.scalar('SELECT name FROM teachers LIMIT 1')
+        self._seed_spectator_traces('观众甲', guesses=2, logins=1)
+        self._seed_spectator_traces('观众乙', pin=True)
+        self._seed_spectator_traces(player, guesses=1)
+        self._seed_spectator_traces(teacher, logins=1)
+        rows = {r['name']: r for r in db.spectator_rows()}
+        self.assertIn('观众甲', rows)
+        self.assertIn('观众乙', rows)
+        self.assertNotIn(player, rows)
+        self.assertNotIn(teacher, rows)
+        self.assertEqual(2, rows['观众甲']['guess_count'])
+        self.assertEqual(1, rows['观众甲']['login_count'])
+        self.assertTrue(rows['观众乙']['custom_pin'])
+
+    def test_purge_spectators_keeps_roster_traces(self):
+        player = self.scalar('SELECT name FROM players LIMIT 1')
+        teacher = self.scalar('SELECT name FROM teachers LIMIT 1')
+        self._seed_spectator_traces('观众甲', guesses=3, logins=2, pin=True)
+        self._seed_spectator_traces(player, guesses=1)
+        self._seed_spectator_traces(teacher, logins=1)
+        before = int(self.scalar("SELECT value FROM meta WHERE key='revision'"))
+        result = db.purge_spectators(['观众甲', player, teacher])
+        self.assertEqual(1, result['names'])
+        self.assertEqual(3, result['guesses'])
+        self.assertEqual(2, result['logins'])
+        self.assertEqual(1, result['pins'])
+        self.assertEqual([player, teacher], result['skipped'])
+        self.assertEqual(0, self.scalar("SELECT count(*) FROM guesses WHERE name='观众甲'"))
+        self.assertEqual(0, self.scalar("SELECT count(*) FROM login_logs WHERE identity='观众甲'"))
+        self.assertEqual(0, self.scalar("SELECT count(*) FROM student_pins WHERE name='观众甲'"))
+        self.assertEqual(1, self.scalar("SELECT count(*) FROM guesses WHERE name=?", (player,)))
+        self.assertEqual(1, self.scalar("SELECT count(*) FROM login_logs WHERE identity=?", (teacher,)))
+        self.assertGreater(int(self.scalar("SELECT value FROM meta WHERE key='revision'")), before)
+
+    def test_spectator_purge_route_requires_csrf(self):
+        self.login()
+        response = self.client.post('/admin/spectators/purge', data={'names': '观众甲'})
+        self.assertEqual(403, response.status_code)
+
+    def test_spectator_page_and_purge_route(self):
+        self.login()
+        self._seed_spectator_traces('观众甲', guesses=2, logins=1)
+        page = self.client.get('/admin/spectators').get_data(as_text=True)
+        self.assertIn('观众甲', page)
+        self.assertIn('观众账号清理', page)
+        response = self.post('/admin/spectators/purge', names='观众甲')
+        self.assertEqual(303, response.status_code)
+        self.assertEqual(0, self.scalar("SELECT count(*) FROM guesses WHERE name='观众甲'"))
+        self.assertNotIn('观众甲', self.client.get('/admin/spectators').get_data(as_text=True))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -692,6 +692,94 @@ def reset_student_pin(name: str) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# 观众账号（名单外姓名）识别与清理
+# ---------------------------------------------------------------------------
+
+def spectator_rows() -> list[dict]:
+    """汇总所有「观众」身份的姓名及其数据痕迹。
+
+    观众不是独立账号表，而是「出现在竞猜/登录/验证码记录里、
+    但不在队员名单也不在老师名单」的姓名。后台据此展示并提供清理。
+    """
+    with connection() as db:
+        protected = {row[0] for row in db.execute("SELECT name FROM players")}
+        protected |= {row[0] for row in db.execute("SELECT name FROM teachers")}
+        names: set[str] = set()
+        for row in db.execute("SELECT DISTINCT name FROM guesses"):
+            names.add(row[0])
+        for row in db.execute("SELECT DISTINCT name FROM student_pins"):
+            names.add(row[0])
+        for row in db.execute("SELECT DISTINCT identity FROM login_logs"):
+            names.add(row[0])
+        # 排除空占位（如 "(空)"）与受保护名单
+        names = {n for n in names if n and n.strip() and not n.startswith("(")}
+        names -= protected
+        rows = []
+        for name in sorted(names):
+            guesses = db.execute(
+                "SELECT count(*) FROM guesses WHERE name = ?", (name,)
+            ).fetchone()[0]
+            log = db.execute(
+                "SELECT count(*), max(occurred_at) FROM login_logs WHERE identity = ?",
+                (name,),
+            ).fetchone()
+            custom_pin = db.execute(
+                "SELECT 1 FROM student_pins WHERE name = ?", (name,)
+            ).fetchone() is not None
+            rows.append({
+                "name": name,
+                "guess_count": guesses,
+                "login_count": log[0],
+                "last_login": (log[1] or "")[:19].replace("T", " "),
+                "custom_pin": custom_pin,
+            })
+    rows.sort(key=lambda r: (-r["guess_count"], -r["login_count"], r["name"]))
+    return rows
+
+
+def purge_spectators(names: list[str]) -> dict:
+    """清理指定观众的全部数据痕迹；返回统计。
+
+    安全约束：
+      * 每个姓名在删除前再次确认不在队员/老师名单中，避免清理瞬间
+        恰好被加入名单的人被误删；
+      * 只删竞猜、登录日志与该姓名自设的验证码，不碰任何比赛数据；
+      * 单一事务内完成；结束时手动递增版本号让在线页面刷新
+        （guesses / login_logs 无触发器，重复递增无害）。
+    """
+    result = {"names": 0, "guesses": 0, "logins": 0, "pins": 0, "skipped": []}
+    with connection() as db:
+        for raw in names:
+            name = (raw or "").strip()
+            if not name:
+                continue
+            in_player = db.execute(
+                "SELECT 1 FROM players WHERE name = ?", (name,)
+            ).fetchone()
+            in_teacher = db.execute(
+                "SELECT 1 FROM teachers WHERE name = ?", (name,)
+            ).fetchone()
+            if in_player or in_teacher:
+                result["skipped"].append(name)
+                continue
+            result["guesses"] += db.execute(
+                "DELETE FROM guesses WHERE name = ?", (name,)
+            ).rowcount
+            result["logins"] += db.execute(
+                "DELETE FROM login_logs WHERE identity = ?", (name,)
+            ).rowcount
+            result["pins"] += db.execute(
+                "DELETE FROM student_pins WHERE name = ?", (name,)
+            ).rowcount
+            result["names"] += 1
+        db.execute(
+            "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
+            "WHERE key = 'revision'"
+        )
+    return result
+
+
 def recent_changes(team: str, limit: int = 6):
     """某组最近的名单变更（直接读数据库，供页面展示持久化结果）。"""
     with connection() as db:

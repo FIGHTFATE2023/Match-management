@@ -639,3 +639,52 @@ def account_delete(key: str):
         conn.execute(f"DELETE FROM {table} WHERE id = ?", (item["id"],))
     flash(f"账号「{item['username']}」已从真实名单中删除", "ok")
     return redirect(url_for("admin.accounts"), code=303)
+
+
+# ---------------------------------------------------------------------------
+# 观众账号清理（名单外姓名及其竞猜 / 登录 / 验证码痕迹）
+# ---------------------------------------------------------------------------
+
+@admin.get("/spectators")
+def spectators():
+    q = request.args.get("q", "").strip().lower()
+    rows = db.spectator_rows()
+    if q:
+        rows = [r for r in rows if q in r["name"].lower()]
+    total_guesses = sum(r["guess_count"] for r in rows)
+    page_rows, total, pages, page = _slice(rows, _page_arg())
+    return render_template(
+        "admin/spectators.html",
+        rows=page_rows, total=total, pages=pages, page=page,
+        total_guesses=total_guesses, q=q,
+    )
+
+
+@admin.post("/spectators/purge")
+def spectator_purge():
+    if not _valid_csrf():
+        abort(403)
+    names = request.form.getlist("names")
+    if not names:
+        flash("请先选择要清理的观众", "error")
+        return redirect(url_for("admin.spectators"), code=303)
+    result = db.purge_spectators(names)
+    parts = []
+    if result["guesses"]:
+        parts.append(f"竞猜 {result['guesses']} 条")
+    if result["logins"]:
+        parts.append(f"登录记录 {result['logins']} 条")
+    if result["pins"]:
+        parts.append(f"自定义验证码 {result['pins']} 条")
+    detail = "、".join(parts) if parts else "无数据痕迹"
+    flash(
+        f"已清理 {result['names']} 位观众（{detail}），在线榜单已刷新",
+        "ok",
+    )
+    if result["skipped"]:
+        flash(
+            "以下姓名属于队员或老师名单，已跳过保护："
+            + "、".join(result["skipped"]),
+            "error",
+        )
+    return redirect(url_for("admin.spectators"), code=303)

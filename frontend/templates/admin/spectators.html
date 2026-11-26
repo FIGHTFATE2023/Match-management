@@ -1,0 +1,95 @@
+{% extends "admin/base.html" %}
+{% block title %}观众账号清理{% endblock %}
+{% block crumb %}观众账号清理{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>观众账号清理</h1>
+      <p>观众是名单外的临时身份，没有独立账号。此处集中展示其竞猜、登录与验证码痕迹，可勾选后彻底清理，不影响任何队员、老师与比赛数据。</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <form class="filter-bar" method="get" action="{{ url_for('admin.spectators') }}">
+      <label class="filter-field filter-grow">
+        <span>关键词</span>
+        <input type="search" name="q" value="{{ q }}" placeholder="观众姓名">
+      </label>
+      <button class="btn" type="submit">搜索</button>
+      <a class="btn ghost" href="{{ url_for('admin.spectators') }}">重置</a>
+    </form>
+
+    <div class="result-bar">
+      <span>共 <strong>{{ total }}</strong> 位观众{% if q %}（已筛选）{% endif %}，竞猜记录 <strong>{{ total_guesses }}</strong> 条</span>
+      <span>第 {{ page }} / {{ pages }} 页</span>
+    </div>
+
+    {% if rows %}
+    <form method="post" action="{{ url_for('admin.spectator_purge') }}" id="purge-form">
+      <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="check-all" aria-label="全选本页"></th>
+              <th>观众姓名</th>
+              <th>竞猜记录</th>
+              <th>登录次数</th>
+              <th>最近登录</th>
+              <th>验证码</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td><input type="checkbox" name="names" value="{{ row.name }}" class="row-check" aria-label="选择 {{ row.name }}"></td>
+              <td class="cell-strong">{{ row.name }}</td>
+              <td>{{ row.guess_count }} 条</td>
+              <td>{{ row.login_count }} 次</td>
+              <td class="cell-sub">{{ row.last_login or '—' }}</td>
+              <td>{{ '已自设' if row.custom_pin else '初始 1234' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="spectator-actions">
+        <button class="btn danger" type="submit"
+                data-confirm-click="确认清理所选观众？将删除其全部竞猜记录、登录记录与自定义验证码，且不可恢复。队员与老师名单不受影响。">
+          清理所选观众
+        </button>
+        <span class="cell-sub">清理后在线积分榜单会自动刷新；本页只列名单外姓名，队员与老师不会被清理。</span>
+      </div>
+    </form>
+    {% else %}
+      <p class="empty-state">当前没有可清理的观众账号，试试调整关键词。</p>
+    {% endif %}
+
+    {% if pages > 1 %}
+    <nav class="pager" aria-label="分页">
+      {% if page > 1 %}<a class="btn ghost" href="{{ url_for('admin.spectators', q=q, page=page-1) }}">上一页</a>{% endif %}
+      <span class="pager-current">{{ page }} / {{ pages }}</span>
+      {% if page < pages %}<a class="btn ghost" href="{{ url_for('admin.spectators', q=q, page=page+1) }}">下一页</a>{% endif %}
+    </nav>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var all = document.getElementById('check-all');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.row-check'));
+  if (!all) return;
+  all.addEventListener('change', function () {
+    rows.forEach(function (c) { c.checked = all.checked; });
+  });
+  rows.forEach(function (c) {
+    c.addEventListener('change', function () {
+      all.checked = rows.length > 0 && rows.every(function (x) { return x.checked; });
+    });
+  });
+})();
+</script>
+{% endblock %}

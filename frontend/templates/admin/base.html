@@ -26,6 +26,9 @@
       <a class="admin-nav-item{% if request.path.startswith('/admin/accounts') %} is-active{% endif %}" href="{{ url_for('admin.accounts') }}">
         <span class="nav-icon" aria-hidden="true">♙</span> 账号管理
       </a>
+      <a class="admin-nav-item{% if request.path.startswith('/admin/spectators') %} is-active{% endif %}" href="{{ url_for('admin.spectators') }}">
+        <span class="nav-icon" aria-hidden="true">◇</span> 观众账号清理
+      </a>
     </nav>
     <div class="admin-side-foot">
       <a class="admin-nav-item" href="/" target="_blank" rel="noopener">↗ 查看前台</a>
