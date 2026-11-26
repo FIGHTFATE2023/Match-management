@@ -75,7 +75,7 @@ class GuessTests(unittest.TestCase):
 
     def test_first_fifteen_uses_increment_and_order_and_confirmation(self):
         db.save_guess('测试观众', 'game', '1-2', 'B', 1)
-        db.save_guess('D老师', 'game', '1-2', 'B', 2)
+        db.save_guess('D老师', 'game', '1-2', 'B', 1)
         db.save_guess('对方观众', 'game', '1-2', 'A', 1)
         self.first_game()  # 继承 15:5
         self.assertTrue(db.start_score_game('1-2', 1, 2, '1', '裁判')[0])
@@ -90,7 +90,7 @@ class GuessTests(unittest.TestCase):
         self.assertEqual(outcome['winner'], 'B')
         self.assertEqual(outcome['settled'], {'win':True, 'gain':1.5})
         scores = {row['name']:row for row in db.standings()['guesses']}
-        self.assertEqual(scores['D老师']['score'], 2.5)
+        self.assertEqual(scores['D老师']['score'], 1.5)
         self.assertEqual(scores['测试观众']['score'], 1.5)
         self.assertEqual(scores['对方观众']['score'], 0)
         self.assertEqual(db.score_game('1-2')['score_a'], 30)
@@ -125,7 +125,7 @@ class GuessTests(unittest.TestCase):
             session.update(role='teacher', name='D老师')
         self.assertEqual(self.post('/guess/game', ref='1-1', pick='A').status_code, 200)
         with db.connection() as conn:
-            self.assertEqual(conn.execute('SELECT stake FROM guesses').fetchone()['stake'], 2)
+            self.assertEqual(conn.execute('SELECT stake FROM guesses').fetchone()['stake'], 1)
         data = self.client.get('/api/guess').get_json()
         self.assertEqual(data['standings'][0]['score_text'], '0.00')
         self.assertEqual(self.client.get('/guess').status_code, 200)
@@ -139,7 +139,7 @@ class GuessTests(unittest.TestCase):
         db.init_db()
         with db.connection() as conn:
             row=conn.execute('SELECT * FROM guesses').fetchone()
-            self.assertEqual((row['pick'],row['stake']), ('A',2))
+            self.assertEqual((row['pick'],row['stake']), ('A',1))
 
     def test_existing_database_copy_keeps_match_data(self):
         if not self.original_db.exists():
@@ -188,16 +188,16 @@ class GuessTests(unittest.TestCase):
     def test_live_prediction_ratios_and_personal_scores(self):
         self.publish()
         db.save_guess('测试观众', 'game', '1-1', 'A', 1)
-        db.save_guess('D老师', 'game', '1-1', 'A', 2)
+        db.save_guess('D老师', 'game', '1-1', 'A', 1)
         db.save_guess('另一观众', 'game', '1-1', 'B', 1)
         db.start_score_game('1-1', 1, 1, '1', '裁判')
         item = self.client.get('/api/live').get_json()['items']['1-1']
-        self.assertEqual(item['predict'], {'a_count': 2, 'b_count': 1, 'a_stake': 3, 'b_stake': 1})
+        self.assertEqual(item['predict'], {'a_count': 2, 'b_count': 1, 'a_stake': 2, 'b_stake': 1})
         self.assertEqual((item['my_pick'], item['expected'], item['settled']), ('A', 1.5, None))
         with self.client.session_transaction() as session:
             session.update(role='teacher', name='D老师')
         teacher = self.client.get('/api/live').get_json()['items']['1-1']
-        self.assertEqual(teacher['expected'], 2.5)
+        self.assertEqual(teacher['expected'], 1.5)
         with self.client.session_transaction() as session:
             session.update(role='student', name='未竞猜观众', pinv=1)
         observer = self.client.get('/api/live').get_json()['items']['1-1']

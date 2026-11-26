@@ -744,8 +744,8 @@ def guess_game_cancel():
 
 # ----------------------------- 比赛记分 -----------------------------
 def guesser_stake(identity) -> int:
-    """下注分数（= 竞猜计分公式的「基础分数」）：学生 / 观众 1，老师 2。"""
-    return 2 if identity["role"] == "teacher" else 1
+    """下注分数（= 竞猜计分公式的「基础分数」）：所有人一律 1 分。"""
+    return 1
 
 
 @app.get("/api/guess")

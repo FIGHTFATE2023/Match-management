@@ -430,7 +430,6 @@ def init_db() -> None:
         cols = {row["name"] for row in db.execute("PRAGMA table_info(guesses)")}
         if "stake" not in cols:
             db.execute("ALTER TABLE guesses ADD COLUMN stake INTEGER NOT NULL DEFAULT 1")
-            db.execute("UPDATE guesses SET stake = 2 WHERE name IN (SELECT name FROM teachers)")
         seeded = db.execute(
             "SELECT 1 FROM meta WHERE key = 'roster_seeded'"
         ).fetchone()
@@ -1306,7 +1305,7 @@ _score_lock = threading.RLock()
 def save_guess(name: str, kind: str, ref: str, pick: str, stake: int = 1) -> bool:
     """写入（或覆盖）某用户的单条竞猜，并快照该用户的下注分数。
 
-    stake（学生/观众 1、老师 2）同时是竞猜计分公式里的「基础分数」。
+    stake（所有人一律 1）同时是竞猜计分公式里的「基础分数」。
     同一 (name, kind, ref) 只保留最新一次。
     """
     now = _now()
