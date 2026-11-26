@@ -1,0 +1,6 @@
+{% if g.current %}
+{% with identity=g.current %}
+{% include "_champion_dialog.html" %}
+{% endwith %}
+<script src="/static/tournament.js?v={{ asset_v }}" defer></script>
+{% endif %}

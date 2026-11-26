@@ -4,10 +4,10 @@
 本机 127.0.0.1，本机、局域网和公网访问的是同一个进程、同一份 .local/match.db，
 因此名单、队长改动和变更记录天然完全一致，不需要任何数据同步。
 
-用法：
-    python public_tunnel.py                     # 默认 Cloudflare 临时隧道，零配置
-    python public_tunnel.py --tunnel ngrok     # ngrok 固定域名，重启后地址不变
-    python public_tunnel.py --port 8768        # 换端口
+用法（从项目根目录运行）：
+    python backend/public_tunnel.py                     # 默认 Cloudflare 临时隧道，零配置
+    python backend/public_tunnel.py --tunnel ngrok     # ngrok 固定域名，重启后地址不变
+    python backend/public_tunnel.py --port 8768        # 换端口
 
 按 Ctrl+C 会同时停止本脚本启动的隧道与本地服务；若复用的是已经运行的
 本地服务，则只停止隧道，不干扰原有窗口。
@@ -29,7 +29,8 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parent
+# backend/ 的上一级即项目根目录；所有运行数据、工具都放在根目录的 .local/ 下
+ROOT = Path(__file__).resolve().parent.parent
 LOCAL = ROOT / ".local"
 DEFAULT_PORT = 8768
 URL_FILE = LOCAL / "public-url.txt"
@@ -82,14 +83,14 @@ def ensure_app(port: int):
     print("正在启动本地服务 ...", flush=True)
     env = dict(os.environ, PORT=str(port))
     proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "app.py")], cwd=str(ROOT), env=env
+        [sys.executable, str(ROOT / "backend" / "app.py")], cwd=str(ROOT), env=env
     )
     for _ in range(80):
         if http_alive(port):
             print(f"本地服务已就绪 127.0.0.1:{port}", flush=True)
             return proc
         if proc.poll() is not None:
-            raise RuntimeError("本地服务启动失败，请单独运行 app.py 查看报错")
+            raise RuntimeError("本地服务启动失败，请单独运行 backend/app.py 查看报错")
         time.sleep(0.25)
     raise RuntimeError("本地服务启动超时")
 
@@ -109,10 +110,10 @@ def stop(proc) -> None:
 
 
 def cloudflared_exe(explicit: str = "") -> str:
+    # 只查项目内的 .local/tools 与系统 PATH，不写死任何机器的磁盘路径
     candidates = [
         explicit,
         LOCAL / "tools" / "cloudflared.exe",
-        Path(r"D:/make_money/Where to charge/.local/tools/cloudflared.exe"),
         shutil.which("cloudflared"),
     ]
     for candidate in candidates:

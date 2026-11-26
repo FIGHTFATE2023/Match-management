@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
 </head>
 <body class="login-page">
+  <a class="login-admin-entry" href="/admin/" title="后台管理">后台管理</a>
   <main class="login-card" data-initial="{{ initial_step }}">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">赛</span>
@@ -38,9 +39,9 @@
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="role" value="teacher">
         <div class="teacher-grid">
-          <button class="btn teacher-btn" type="submit" name="teacher" value="肖老师">肖老师</button>
-          <button class="btn teacher-btn" type="submit" name="teacher" value="王老师">王老师</button>
-          <button class="btn teacher-btn" type="submit" name="teacher" value="刘老师">刘老师</button>
+          <button class="btn teacher-btn" type="submit" name="teacher" value="D老师">D老师</button>
+          <button class="btn teacher-btn" type="submit" name="teacher" value="L老师">L老师</button>
+          <button class="btn teacher-btn" type="submit" name="teacher" value="Z老师">Z老师</button>
         </div>
       </form>
       <button type="button" class="link-btn back-btn" data-back>← 返回选择身份</button>

@@ -15,5 +15,5 @@ echo   Local : http://127.0.0.1:%PORT%
 echo   Public: run start-public.cmd  (tunnel to this same backend)
 echo   Press Ctrl+C to stop
 echo.
-"%PY%" app.py
+"%PY%" backend\app.py
 pause

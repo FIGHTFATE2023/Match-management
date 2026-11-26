@@ -1,0 +1,95 @@
+{% extends "admin/base.html" %}
+{% block title %}账号管理{% endblock %}
+{% block crumb %}账号管理{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>账号管理</h1>
+      <p>直接管理前台真实的队员与老师名单，可编辑资料、角色与启用状态；禁用后对方立即无法登录。</p>
+    </div>
+    <a class="btn primary" href="{{ url_for('admin.account_new') }}">＋ 新增账号</a>
+  </section>
+
+  <section class="panel">
+    <form class="filter-bar" method="get" action="{{ url_for('admin.accounts') }}">
+      <label class="filter-field filter-grow">
+        <span>关键词</span>
+        <input type="search" name="q" value="{{ q }}" placeholder="姓名 / 组别">
+      </label>
+      <label class="filter-field">
+        <span>角色</span>
+        <select name="role">
+          <option value="">全部角色</option>
+          {% for r in role_choices %}
+            <option value="{{ r }}"{% if role == r %} selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="filter-field">
+        <span>状态</span>
+        <select name="enabled">
+          <option value="">全部状态</option>
+          <option value="1"{% if enabled == '1' %} selected{% endif %}>已启用</option>
+          <option value="0"{% if enabled == '0' %} selected{% endif %}>已禁用</option>
+        </select>
+      </label>
+      <button class="btn" type="submit">搜索</button>
+      <a class="btn ghost" href="{{ url_for('admin.accounts') }}">重置</a>
+    </form>
+
+    <div class="result-bar">
+      <span>共 <strong>{{ total }}</strong> 个真实账号{% if q or role or enabled %}（已筛选）{% endif %}</span>
+      <span>第 {{ page }} / {{ pages }} 页</span>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>ID</th><th>姓名</th><th>类型</th><th>角色</th><th>组别 / 性别</th><th>状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="cell-id">#{{ row.id }}</td>
+            <td class="cell-strong">{{ row.username }}</td>
+            <td><span class="tag tag-role">{{ '队员' if row.source == 'player' else '老师' }}</span></td>
+            <td>{{ row.role }}</td>
+            <td class="cell-contact">{{ row.team ~ ' 组' if row.team else '—' }}{% if row.gender %}<br><span class="cell-sub">{{ row.gender }}</span>{% endif %}</td>
+            <td>
+              <span class="tag tag-{{ 'enabled' if row.enabled else 'disabled' }}">{{ '已启用' if row.enabled else '已禁用' }}</span>
+              <form method="post" action="{{ url_for('admin.account_toggle', key=row.key) }}" class="inline-form">
+                <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+                <button class="link-btn" type="submit"
+                        data-confirm-click="确认{{ '禁用' if row.enabled else '启用' }}账号「{{ row.username }}」？禁用后对方立即无法登录。">
+                  {{ '禁用' if row.enabled else '启用' }}
+                </button>
+              </form>
+            </td>
+            <td class="cell-actions">
+              <a class="link-btn" href="{{ url_for('admin.account_edit', key=row.key) }}">编辑</a>
+              <form method="post" action="{{ url_for('admin.account_delete', key=row.key) }}" class="inline-form">
+                <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+                <button class="link-btn link-danger" type="submit"
+                        data-confirm-click="确认从真实名单中删除「{{ row.username }}」？历史比赛记录中的姓名不会改写。">删除</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="empty-state">没有符合条件的账号，试试调整筛选条件或新增一个。</p>
+    {% endif %}
+
+    {% if pages > 1 %}
+    <nav class="pager" aria-label="分页">
+      {% if page > 1 %}<a class="btn ghost" href="{{ url_for('admin.accounts', q=q, role=role, enabled=enabled, page=page-1) }}">上一页</a>{% endif %}
+      <span class="pager-current">{{ page }} / {{ pages }}</span>
+      {% if page < pages %}<a class="btn ghost" href="{{ url_for('admin.accounts', q=q, role=role, enabled=enabled, page=page+1) }}">下一页</a>{% endif %}
+    </nav>
+    {% endif %}
+  </section>
+{% endblock %}

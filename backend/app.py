@@ -9,7 +9,7 @@
 
 登录规则（按需求定制，不使用密码与注册）：
   1. 先选身份：我是选手/观众 / 我是老师
-  2. 老师：从肖老师、王老师、刘老师三选一（不要求验证码）
+  2. 老师：从 D老师、L老师、Z老师三选一（不要求验证码）
   3. 选手/观众：输入真实姓名 + 该姓名自己的 4 位验证码；名单内为参赛选手
      （含赛中临时加入本组名单的人），名单外作为观众放行
   4. 参赛选手显示「你是 X 组的选手」，队长显示「你是 X 组的队长」，观众显示「你是观众」
@@ -45,8 +45,10 @@ from flask import (
 )
 
 import db
+import admin as admin_module
 
-ROOT = Path(__file__).resolve().parent
+# 所有路径都相对本文件推导：backend/ 的上一级即项目根目录，换机器/换盘符都可用。
+ROOT = Path(__file__).resolve().parent.parent
 SECRET_PATH = ROOT / ".local" / "secret_key.txt"
 # 云端发布平台会注入 PORT，并要求绑定 0.0.0.0；本地默认仍是 8768
 PORT = int(os.environ.get("PORT", "8768"))
@@ -65,7 +67,14 @@ def load_secret() -> str:
     return value
 
 
-app = Flask(__name__)
+# 模板与静态资源都在相邻的 frontend/ 目录；Flask 按模块所在目录（backend/）
+# 解析这两个相对路径，因此不需要写任何机器相关的绝对路径。
+app = Flask(
+    __name__,
+    template_folder="../frontend/templates",
+    static_folder="../frontend/static",
+    static_url_path="/static",  # 浏览器里的 /static/... URL 保持不变
+)
 app.config.update(
     SESSION_COOKIE_NAME="match_session",
     SESSION_COOKIE_HTTPONLY=True,
@@ -78,6 +87,9 @@ app.config.update(
 app.secret_key = load_secret()
 
 db.init_db()
+admin_module.init_admin_db()
+# 后台管理独立挂在 /admin，使用自己的账号与会话，不共用前台身份体系。
+app.register_blueprint(admin_module.admin)
 
 # ---------- 验证码失败限流（4 位数字只有一万种组合，必须挡住暴力尝试） ----------
 # 按「访客 + 姓名」分桶：试错某个账号不会连带锁死其他人。
@@ -145,6 +157,9 @@ def current_identity():
         session.clear()
         return None
     player = db.find_player(name)
+    if player and not player.get("enabled", True):
+        session.clear()
+        return None
     if not player:
         # 非参赛选手同样允许进入，身份标记为观众；每次请求回查，
         # 之后名单新增此人会自动转为队员，队员移出名单会自动转为观众。
@@ -169,11 +184,28 @@ def current_identity():
 @app.before_request
 def guard():
     g.current = current_identity()
-    if request.endpoint in ("login", "static"):
+    # 后台 /admin 用自己的登录会话与 CSRF，且比赛结束后仍可维护数据，
+    # 因此完全跳过前台的「未登录跳登录」与「终局锁」逻辑。
+    if request.endpoint in ("login", "static") or (request.endpoint or "").startswith("admin."):
         return None
     if not g.current:
         return redirect(url_for("login"), code=303)
+    if request.method == "POST" and request.endpoint not in ("login", "logout", "change_passcode"):
+        # 与计分共用可重入锁，避免第四次确认和晚到的记分请求互相穿插。
+        db._score_lock.acquire()
+        g.tournament_write_lock = True
+        if request.endpoint not in ("tournament_confirm", "tournament_dismiss") and db.tournament_is_finalized():
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return jsonify(ok=False, error="比赛已结束，最终榜单已锁定"), 409
+            flash("比赛已结束，最终榜单已锁定", "error")
+            return redirect(url_for("standings_page"), code=303)
     return None
+
+
+@app.teardown_request
+def release_tournament_write_lock(error=None):
+    if g.pop("tournament_write_lock", False):
+        db._score_lock.release()
 
 
 @app.after_request
@@ -224,6 +256,8 @@ def forbidden(_error):
         message = "只有本组队长可以调整与发布安排。"
     elif request.path.startswith("/referee"):
         message = "只有参赛选手可以进入裁判台并记分。"
+    elif request.path.startswith("/admin/"):
+        message = "后台操作校验失败（表单已过期），请刷新页面后重试。"
     else:
         message = "只有本组队长可以管理成员名单。"
     return render_template("error.html", message=message), 403
@@ -303,6 +337,15 @@ def login():
             )
         clear_passcode_failures(key)
         player = db.find_player(name)
+        if player and not player.get("enabled", True):
+            db.log_login("student", name, player["team"], "disabled")
+            return render_login(
+                "该账号已被管理员禁用，请联系管理员",
+                403,
+                name_value=name,
+                initial="student",
+                csrf=csrf,
+            )
         session.clear()
         session["role"] = "student"
         session["name"] = player["name"] if player else name
@@ -396,10 +439,11 @@ def api_revision():
 @app.context_processor
 def inject_live_status():
     """所有含导航的页面共享：是否有进行中比赛（决定「查看赛程」的提示点）。"""
-    return {"has_live": bool(g.get("current")) and db.has_running_game()}
+    return {"has_live": bool(g.get("current")) and db.has_running_game(),
+            "champion_csrf": form_csrf() if g.get("current") else ""}
 
 
-STATIC_ROOT = ROOT / "static"
+STATIC_ROOT = ROOT / "frontend" / "static"
 
 
 @app.context_processor
@@ -522,6 +566,197 @@ def schedule():
 
 # ----------------------------- 比赛记分 · 追分版 -----------------------------
 
+@app.get("/guess")
+def guess_page():
+    """比赛竞猜页。
+
+    赛程未公布前只开放「冠军组别竞猜」；四组全部发布后，额外开放「小局竞猜」，
+    并在该区块展示赛程对阵卡片与每局的竞猜选项。
+    """
+    identity = g.current
+    status = db.publication_status()
+    published = db.all_published()
+    teams = list(db.ROSTER.keys())
+    user = db.get_user_guesses(identity["name"])
+    schedule_matches = []
+    if published:
+        lineups = db.all_effective_lineups()
+        for match in db.all_matches():
+            games = []
+            for game in db.GAMES:
+                row_a = lineups.get((match["id"], match["team_a"]), {}).get(game["no"], {})
+                row_b = lineups.get((match["id"], match["team_b"]), {}).get(game["no"], {})
+                games.append(
+                    {
+                        "no": game["no"],
+                        "event": game["event"],
+                        "event_key": EVENT_CLASS.get(game["event"], "mixed"),
+                        "players_a": [
+                            n for n in (row_a.get("player1"), row_a.get("player2")) if n
+                        ],
+                        "players_b": [
+                            n for n in (row_b.get("player1"), row_b.get("player2")) if n
+                        ],
+                    }
+                )
+            schedule_matches.append(
+                {
+                    "match_id": match["id"],
+                    "team_a": match["team_a"],
+                    "team_b": match["team_b"],
+                    "games": games,
+                }
+            )
+    return render_template(
+        "guess.html",
+        identity=identity,
+        published=published,
+        status=status,
+        teams=teams,
+        champion_pick=user["champion"],
+        game_picks=user["games"],
+        schedule_matches=schedule_matches,
+        locked_refs=set(db.all_score_games()),
+        champion_locked=db.has_started_game(),
+        csrf=form_csrf(),
+    )
+
+
+@app.post("/guess/champion")
+def guess_champion():
+    """提交 / 修改冠军组别竞猜；每人限一条，覆盖即更新。
+
+    第一小局开赛后即锁定，不能再选择或修改（含已提交过的用户）。
+    前端用 fetch 静默提交（带 X-Requested-With 头），此时返回 JSON，
+    页面不刷新、不弹窗，仅由前端就地高亮；保留普通表单提交作为兜底。
+    """
+    identity = g.current
+    if not valid_form_csrf():
+        abort(403)
+    ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if db.has_started_game():
+        message = "第一小局比赛已开始，冠军组别竞猜已锁定"
+        if ajax:
+            return jsonify(ok=False, error=message, locked=True), 403
+        flash(message, "error")
+        return redirect(url_for("guess_page"), code=303)
+    pick = (request.form.get("pick") or "").strip()
+    if pick not in db.ROSTER:
+        if ajax:
+            return jsonify(ok=False, error="请选择有效的冠军组别"), 400
+        flash("请选择有效的冠军组别", "error")
+        return redirect(url_for("guess_page"), code=303)
+    if not db.save_guess(
+        identity["name"], "champion", "champion", pick, guesser_stake(identity)
+    ):
+        return jsonify(ok=False, error="冠军竞猜已锁定", locked=True), 403
+    if ajax:
+        return jsonify(ok=True, kind="champion", pick=pick)
+    flash(f"已竞猜 {pick} 组夺冠，可随时修改", "ok")
+    return redirect(url_for("guess_page"), code=303)
+
+
+@app.post("/guess/game")
+def guess_game():
+    """提交 / 修改某一小局率先获得十五分的竞猜；仅赛程公布后开放。
+
+    与冠军竞猜一致：前端用 fetch 静默提交时返回 JSON，页面不刷新。
+    """
+    identity = g.current
+    if not valid_form_csrf():
+        abort(403)
+    ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if not db.all_published():
+        if ajax:
+            return jsonify(ok=False, error="赛程尚未公布，小局竞猜暂未开放"), 403
+        flash("赛程尚未公布，小局竞猜暂未开放", "error")
+        return redirect(url_for("guess_page"), code=303)
+    ref = (request.form.get("ref") or "").strip()
+    pick = (request.form.get("pick") or "").strip()
+    try:
+        match_id, game_no = (int(x) for x in ref.split("-"))
+    except (ValueError, AttributeError):
+        if ajax:
+            return jsonify(ok=False, error="竞猜参数无效"), 400
+        flash("竞猜参数无效", "error")
+        return redirect(url_for("guess_page"), code=303)
+    ref = db.match_ref(match_id, game_no)
+    match = next((m for m in db.all_matches() if m["id"] == match_id), None)
+    valid_games = {g["no"] for g in db.GAMES}
+    if not match or game_no not in valid_games:
+        if ajax:
+            return jsonify(ok=False, error="竞猜参数无效"), 400
+        flash("竞猜参数无效", "error")
+    elif pick not in (match["team_a"], match["team_b"]):
+        if ajax:
+            return jsonify(ok=False, error="竞猜选项不属于本局对阵双方"), 400
+        flash("竞猜选项不属于本局对阵双方", "error")
+    elif db.score_game_state(ref) != "idle":
+        message = "本局比赛已开始，竞猜已锁定"
+        if ajax:
+            return jsonify(ok=False, error=message), 403
+        flash(message, "error")
+    else:
+        if not db.save_guess(
+            identity["name"], "game", ref, pick, guesser_stake(identity)
+        ):
+            return jsonify(ok=False, error="本局竞猜已锁定", locked=True), 403
+        if ajax:
+            return jsonify(ok=True, kind="game", ref=ref, pick=pick, game_no=game_no)
+        flash(f"第 {game_no} 局已竞猜 {pick} 组本局先获十五分，可随时修改", "ok")
+    return redirect(url_for("guess_page"), code=303)
+
+
+@app.post("/guess/game/cancel")
+def guess_game_cancel():
+    """取消某一小局率先获得十五分的竞猜（撤回选择）。"""
+    identity = g.current
+    if not valid_form_csrf():
+        abort(403)
+    ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if not db.all_published():
+        if ajax:
+            return jsonify(ok=False, error="赛程尚未公布，小局竞猜暂未开放"), 403
+        return redirect(url_for("guess_page"), code=303)
+    ref = (request.form.get("ref") or "").strip()
+    try:
+        match_id, game_no = (int(x) for x in ref.split("-"))
+    except (ValueError, AttributeError):
+        if ajax:
+            return jsonify(ok=False, error="竞猜参数无效"), 400
+        return redirect(url_for("guess_page"), code=303)
+    ref = db.match_ref(match_id, game_no)
+    match = next((m for m in db.all_matches() if m["id"] == match_id), None)
+    if not match or game_no not in {g["no"] for g in db.GAMES}:
+        if ajax:
+            return jsonify(ok=False, error="竞猜参数无效"), 400
+        return redirect(url_for("guess_page"), code=303)
+    if db.score_game_state(ref) != "idle":
+        if ajax:
+            return jsonify(ok=False, error="本局比赛已开始，竞猜已锁定"), 403
+        return redirect(url_for("guess_page"), code=303)
+    if not db.delete_guess(identity["name"], "game", ref):
+        return jsonify(ok=False, error="本局竞猜已锁定", locked=True), 403
+    if ajax:
+        return jsonify(ok=True, kind="game", ref=ref, game_no=game_no)
+    return redirect(url_for("guess_page"), code=303)
+
+
+# ----------------------------- 比赛记分 -----------------------------
+def guesser_stake(identity) -> int:
+    """下注分数（= 竞猜计分公式的「基础分数」）：学生 / 观众 1，老师 2。"""
+    return 2 if identity["role"] == "teacher" else 1
+
+
+@app.get("/api/guess")
+def api_guess():
+    response = jsonify(games=db.guess_results(g.current["name"]),
+                       champion_locked=db.has_started_game(),
+                       standings=db.standings()["guesses"])
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def parse_ref(ref: str):
     """把 'matchId-gameNo' 解析成 (match, game_no)；非法返回 (None, None)。"""
     try:
@@ -639,6 +874,7 @@ def _custom_active(cm: dict, identity: dict):
         "need_switch": False,
         "reached_end": bool(running and (cm.get("winner") or "")),
         "pending_winner": cm.get("winner") or "",
+        "serve": None,  # 自定义对局不设换边 / 发球提示
         "can_start": False, "lock_reason": "",
         "referee": cm["referee"], "court_input": "自定义",
     }
@@ -686,15 +922,11 @@ def referee_page():
                 groups=[], active=_custom_active(own_custom, identity), resumed=True,
                 csrf=form_csrf(), **custom_ctx,
             )
-    if not db.all_published():
-        return render_template(
-            "referee.html", identity=identity, pending=True,
-            groups=[], active=None, resumed=False, csrf=form_csrf(),
-            **custom_ctx,
-        )
+    all_pub = db.all_published()
     groups = referee_groups()
     resumed = False
     if not want_ref:
+        # 撤回发布后仍要自动恢复本人正在执裁的局，不能中断已开始的记分进程。
         own = db.running_ref_for(identity["name"])
         if own:
             want_ref, resumed = own, True
@@ -717,10 +949,26 @@ def referee_page():
                                         and max(g["score_a"], g["score_b"]) >= g["switch_at"]),
                     "reached_end": bool(running
                                         and max(g["score_a"], g["score_b"]) >= g["target"]),
+                    "serve": db.serve_hint(g["ref"], m["team_a"], m["team_b"]) if running else None,
                 }
                 break
             if active:
                 break
+    # 撤回发布只隐藏未开赛局：本人正在执裁的局必须继续保留记分卡片。
+    # 记分写接口本身不校验发布状态，因此进行中的比分不会被撤回动作影响。
+    if not all_pub:
+        mine_running = bool(
+            active and active["state"] == "running"
+            and active["referee"] == identity["name"]
+        )
+        if not mine_running:
+            return render_template(
+                "referee.html", identity=identity, pending=True,
+                groups=[], active=None, resumed=False, csrf=form_csrf(),
+                **custom_ctx,
+            )
+        # 只保留进行中的本人局，列表不再展示未发布场次的其他局，避免泄露未对局信息。
+        groups = []
     return render_template(
         "referee.html", identity=identity, pending=False,
         groups=groups, active=active,
@@ -890,7 +1138,7 @@ def referee_custom_delete():
 def api_live():
     """赛程页增量刷新数据源：局明细按 v 比对局部更新，另附场次完赛比分与自定义对局。"""
     return jsonify(
-        items=db.live_payload(),
+        items=db.live_payload(g.current["name"]),
         matches=db.match_results(),
         custom=db.custom_live_payload(),
     )
@@ -900,8 +1148,35 @@ def api_live():
 def standings_page():
     return render_template(
         "standings.html", identity=g.current,
-        data=db.standings(), csrf=form_csrf(),
+        data=db.standings(), tournament=db.tournament_status(), csrf=form_csrf(),
     )
+
+
+@app.get("/api/tournament")
+def api_tournament():
+    return jsonify(db.tournament_status(g.current["name"]))
+
+
+@app.post("/tournament/dismiss")
+def tournament_dismiss():
+    if not valid_form_csrf():
+        abort(403)
+    ok = db.dismiss_champion_celebration(g.current["name"], request.form.get("finalized_at", ""))
+    return jsonify(ok=ok), (200 if ok else 409)
+
+
+@app.post("/tournament/confirm")
+def tournament_confirm():
+    identity = require_captain()
+    if not valid_form_csrf():
+        abort(403)
+    result = db.confirm_tournament_end(identity["team"], identity["name"])
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify(result), (200 if result["ok"] else 409)
+    flash("比赛已结束，冠军竞猜已结算" if result.get("finalized") else
+          ("本组已确认，等待其他队长" if result["ok"] else result["error"]),
+          "ok" if result["ok"] else "error")
+    return redirect(url_for("standings_page"), code=303)
 
 
 def lineup_form_rows():

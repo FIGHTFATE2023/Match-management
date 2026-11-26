@@ -73,6 +73,14 @@ body {
 
 /* ---------- 登录页 ---------- */
 .login-page { display: grid; place-items: center; min-height: 100dvh; padding: 24px 16px; }
+.login-admin-entry {
+  position: fixed; top: 18px; right: 20px; z-index: 10;
+  padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg-elev); color: var(--text-dim);
+  font-size: 13px; font-family: inherit; text-decoration: none;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.login-admin-entry:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .login-card {
   width: min(100%, 440px); padding: 32px;
   border: 1px solid var(--line); border-radius: 20px;
@@ -581,7 +589,7 @@ input::placeholder { color: var(--text-mute); }
 .ref-group { margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .ref-group-head { padding: 9px 12px; background: var(--bg-elev-2); font-size: 13px; font-weight: 600; color: var(--text-dim); }
 .ref-row {
-  display: grid; grid-template-columns: 62px 52px minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 62px 52px 78px minmax(0, 1fr) max-content;
   gap: 8px; align-items: center; padding: 9px 12px;
   border-top: 1px solid var(--line); font-size: 13px;
 }
@@ -589,13 +597,16 @@ input::placeholder { color: var(--text-mute); }
 .ref-row.is-finished { opacity: .72; }
 .ref-no { font-weight: 600; white-space: nowrap; }
 .ref-event, .ref-players { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ref-status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.ref-start-form { display: flex; align-items: center; gap: 6px; }
-.court-input {
-  width: 90px; padding: 6px 8px; font-size: 12px; color: var(--text);
+.ref-status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.ref-start-form { display: flex; align-items: center; gap: 8px; margin: 0; flex: none; }
+input[type="text"].court-input {
+  flex: 0 0 104px; width: 104px; height: 36px; padding: 7px 10px; font-size: 13px; color: var(--text);
   background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
 }
 .btn.small { padding: 6px 10px; min-height: 30px; font-size: 12px; }
+.ref-start-form .btn {
+  flex: none; height: 36px; min-height: 36px; padding: 7px 12px; line-height: 20px; white-space: nowrap;
+}
 .state-chip { font-size: 12px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
 .state-chip.is-live { color: #cfe3ff; background: var(--accent-soft); border: 1px solid rgba(79, 157, 255, .42); }
 .state-chip.is-done { color: var(--text-mute); background: var(--bg-elev-2); border: 1px solid var(--line); }
@@ -651,6 +662,12 @@ input::placeholder { color: var(--text-mute); }
 .tag-spectator { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 400; }
 .tag-spectator { color: #d3bcff; background: rgba(177, 140, 255, .16); border: 1px solid rgba(177, 140, 255, .4); }
 
+@media (min-width: 621px) and (max-width: 820px) {
+  .ref-row { grid-template-columns: 62px 52px minmax(0, 1fr); }
+  .ref-players { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+  .ref-status { grid-column: 1 / -1; }
+}
+
 @media (max-width: 620px) {
   .ref-row { grid-template-columns: 1fr 1fr; gap: 4px 8px; }
   .ref-players, .ref-status { grid-column: 1 / -1; }
@@ -666,6 +683,9 @@ input::placeholder { color: var(--text-mute); }
 .rule-hint { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0 14px; font-size: 12px; color: var(--text-mute); }
 .rule-hint span { background: var(--bg-elev-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 9px; }
 .rule-hint strong { color: var(--gold); font-variant-numeric: tabular-nums; }
+.serve-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; padding: 8px 10px; border: 1px solid rgba(240, 207, 133, .38); background: rgba(240, 207, 133, .07); border-radius: 9px; font-size: 13px; color: var(--text-dim); }
+.serve-hint .serve-tag { flex: none; padding: 2px 7px; border-radius: 6px; background: var(--bg-elev-2); color: var(--gold); font-size: 11px; font-weight: 700; }
+.serve-hint strong { color: var(--gold); font-weight: 700; }
 .score-target { display: block; margin-top: 6px; font-size: 11px; color: var(--text-mute); text-align: center; }
 .finish-net { font-size: 11px; font-weight: 700; color: #f0cf85; white-space: nowrap; }
 .match-result.is-running .finish-net { color: #7ee2a8; }
@@ -740,3 +760,116 @@ input::placeholder { color: var(--text-mute); }
   font-size: 11px; color: var(--text-mute);
 }
 .game-grid .custom-game-card .score-target { color: var(--text-mute); }
+
+/* ---- 比赛竞猜 ---- */
+.champion-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 2px; }
+.champion-card { display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; }
+.champion-card:hover { background: #202b3a; border-color: rgba(229, 181, 77, .5); }
+.champion-card:active { transform: scale(.98); }
+.champion-card.is-picked { border-color: var(--gold); background: rgba(229, 181, 77, .08); box-shadow: 0 0 0 2px rgba(229, 181, 77, .18); }
+.champion-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.champion-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.champion-team { font-size: 16px; font-weight: 700; }
+.champion-current { font-size: 11px; color: #f0cf85; background: var(--gold-soft); border: 1px solid rgba(229, 181, 77, .34); border-radius: 999px; padding: 2px 8px; flex: none; display: none; }
+.champion-card.is-picked .champion-current { display: inline-block; }
+/* 第一小局开赛后：冠军竞猜锁定，保留已选高亮但不再响应点击 */
+.champion-lock-tag { font-size: 11px; color: var(--text-mute); background: var(--bg-elev-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.champion-grid.is-locked .champion-card { cursor: default; opacity: .78; }
+.champion-grid.is-locked .champion-card:hover { background: var(--bg); border-color: var(--line); box-shadow: none; }
+.champion-grid.is-locked .champion-card:active { transform: none; }
+.champion-grid.is-locked .champion-card.is-picked { opacity: 1; border-color: var(--gold); background: rgba(229, 181, 77, .08); box-shadow: 0 0 0 2px rgba(229, 181, 77, .18); }
+
+.game-guess { display: flex; flex-direction: column; gap: 8px; }
+.guess-page .game-side { display: flex; flex-direction: column; gap: 1px; min-width: 0; cursor: pointer; padding: 4px 6px; margin: -4px -6px; border-radius: 8px; transition: background .15s, box-shadow .15s; }
+.guess-page .game-side:hover { background: rgba(79, 157, 255, .08); }
+.guess-page .game-side:active { background: rgba(79, 157, 255, .14); }
+.guess-page .game-side.is-picked { background: rgba(79, 157, 255, .14); box-shadow: inset 0 0 0 2px var(--accent); }
+.guess-page .game-side:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.side-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.guess-page .game-side-right .side-head { flex-direction: row-reverse; }
+.side-picked { font-size: 11px; color: #cfe3ff; background: var(--accent); border-radius: 999px; padding: 1px 8px; white-space: nowrap; flex: none; display: none; }
+.guess-page .game-side.is-picked .side-picked { display: inline-block; }
+.side-cancel { font-size: 11px; line-height: 1; color: var(--text-mute); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-left: 2px; cursor: pointer; flex: none; display: none; }
+.guess-page .game-side.is-picked .side-cancel { display: inline-block; }
+.side-cancel:hover { color: #ff9c95; border-color: rgba(255, 156, 149, .5); }
+.side-cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.filter-empty { margin-top: 6px; padding: 18px 12px; text-align: center; }
+
+
+.game-card.is-locked .side-cancel { display: none; }
+.game-card.is-locked .game-side { cursor: default; }
+.guess-result { margin: 10px 0 0; padding: 8px 10px; font-size: 12px; color: var(--text-mute); }
+.guess-result.is-win { color: #9ce0b2; }
+.guess-result.is-loss { color: #ff9c95; }
+.score-value { font-weight: 700; color: var(--gold); }
+.tag-spectator { margin-left: 6px; color: #d3bcff; font-size: 11px; }
+
+.guess-page .game-card.is-locked .game-side { cursor: default; }
+.guess-page .game-card.is-locked .side-cancel { display: none; }
+
+/* 赛程卡片：双方竞猜分数比例，个人预计得分。 */
+.predict-strip { margin-top: 9px; }
+.predict-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--bg-elev-2); }
+.predict-seg { display: block; height: 100%; transition: width .3s ease; }
+.predict-seg.is-red { background: #ef6a73; }
+.predict-seg.is-blue { background: var(--accent); }
+.predict-legend { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--text-mute); }
+.predict-hint { margin: 7px 0 0; font-size: 12px; color: var(--gold); }
+
+.predict-legend > span { min-width: 0; overflow-wrap: anywhere; }
+.predict-legend > span:last-child { text-align: right; }
+.predict-hint { line-height: 1.6; overflow-wrap: anywhere; }
+
+/* 四组确认与金色冠军礼赞 */
+.tournament-end-panel { margin-top: 20px; border-color: rgba(229,181,77,.35); }
+.end-confirm-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin: 18px 0; }
+.end-team-status { display: flex; flex-direction: column; gap: 5px; padding: 14px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
+.end-team-status strong { font-size: 17px; }
+.end-team-status span { font-size: 12px; color: var(--text-mute); }
+.end-team-status.is-confirmed { border-color: rgba(72,199,116,.5); background: rgba(72,199,116,.07); }
+.end-team-status.is-confirmed span { color: #7ee2a8; }
+.end-confirm-button { margin-top: 4px; }
+.end-confirm-button:disabled { opacity: .6; cursor: default; }
+.end-feedback { color: var(--gold); font-size: 13px; }
+.final-champion-summary { padding-top: 8px; color: #f6d785; }
+.final-champion-summary p { font-size: 12px; color: var(--text-dim); }
+.final-champion-summary h3 { font-size: 24px; margin: 8px 0 16px; }
+.champion-replay { color: #f8d98c; border-color: #82632f; background: rgba(229,181,77,.1); }
+.champion-dialog {
+  width: min(560px,calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 40px); padding: 0; overflow: auto;
+  color: #fff2cf; background: #16130e; border: 1px solid #9f7735;
+  border-radius: 24px; box-shadow: 0 0 0 5px rgba(240,192,86,.05),0 0 80px rgba(229,181,77,.22),0 30px 100px #0009;
+}
+.champion-dialog::backdrop { background: rgba(3,7,14,.86); backdrop-filter: blur(7px); }
+.champion-celebration { position: relative; isolation: isolate; overflow: hidden; padding: 32px 30px 28px; text-align: center; }
+.champion-rays { position: absolute; z-index: -1; pointer-events: none; top: -200px; left: calc(50% - 400px); width: 800px; height: 800px; opacity: .16; background: repeating-conic-gradient(from 15deg,transparent 0deg 20deg,#b47c26 23deg 25deg,transparent 28deg 45deg); mask-image: radial-gradient(circle,#000 0,transparent 65%); animation: champion-rays-turn 40s linear infinite; }
+.champion-close { position: absolute; right: 15px; top: 12px; z-index: 2; border: 1px solid #82632f; border-radius: 50%; width: 32px; height: 32px; background: #211c13; color: #f6d785; font-size: 23px; cursor: pointer; line-height: 1; }
+.champion-eyebrow { margin: 0 0 14px; font-size: 11px; letter-spacing: .28em; color: #c7a769; }
+.champion-trophy { width: 160px; height: 160px; filter: drop-shadow(0 0 20px #e5b54d66); animation: champion-glow 2.8s ease-in-out 3; }
+.champion-announcement { margin: 10px 0 2px; font-size: 17px; font-weight: 500; color: #d8c190; }
+.champion-winner { margin: 0; font-size: clamp(36px,9vw,64px); line-height: 1.3; letter-spacing: .06em; color: #ffe4a0; background: linear-gradient(110deg,#c48a35,#fff0b7 45%,#d49b39 65%,#ffe8a5); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 3px 18px #e5b54d33); }
+.champion-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 16px; font-size: 11px; letter-spacing: .2em; color: #c7a769; }
+.champion-divider::before,.champion-divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg,transparent,#80612e,transparent); }
+.champion-rosters h3 { margin: 14px 0 8px; font-size: 15px; color: #f3cf80; }
+.champion-rosters ul { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.champion-rosters li { padding: 7px 14px; border: 1px solid #654e2a; border-radius: 8px; color: #f7e5bf; background: linear-gradient(130deg,#382c18,#211c13); font-size: 14px; }
+.champion-settlement { margin: 22px 0 18px; color: #ac9770; font-size: 11px; }
+.champion-dialog-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; }
+.champion-gold-button { color: #281a06; font-weight: 700; border-color: #e5b54d; background: linear-gradient(110deg,#dca949,#ffe7a3,#dca949); }
+.champion-gold-button:hover { background: #ffe7a3; border-color: #ffe7a3; }
+.champion-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: -1; }
+.champion-confetti i { position: absolute; top: -14px; left: var(--x); width: 5px; height: 10px; background: #f2c76e; opacity: 0; animation: champion-confetti-fall 2.8s var(--delay) ease-out forwards; }
+.champion-confetti i:nth-child(3n) { background: #fff0c4; width: 4px; }
+.champion-confetti i:nth-child(3n + 1) { background: #b87f29; }
+@keyframes champion-rays-turn { to { transform: rotate(360deg); } }
+@keyframes champion-glow { 50% { filter: drop-shadow(0 0 32px #f6c963aa); transform: translateY(-3px); } }
+@keyframes champion-confetti-fall { 10% { opacity: .9; } 85% { opacity: .6; } to { transform: translateY(650px) rotate(var(--rotate)); opacity: 0; } }
+@media (max-width: 520px) {
+  .end-confirm-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .champion-celebration { padding: 28px 18px 24px; }
+  .champion-trophy { width: 128px; height: 128px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .champion-rays,.champion-trophy,.champion-confetti i { animation: none; }
+}

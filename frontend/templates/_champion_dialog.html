@@ -1,0 +1,23 @@
+<dialog class="champion-dialog" id="champion-dialog" aria-labelledby="champion-dialog-title" data-viewer="{{ identity.name }}" data-csrf="{{ champion_csrf }}">
+  <div class="champion-celebration">
+    <div class="champion-rays" aria-hidden="true"></div>
+    <div class="champion-confetti" aria-hidden="true"></div>
+    <button class="champion-close" type="button" data-champion-close aria-label="关闭冠军庆祝弹窗">×</button>
+    <p class="champion-eyebrow">荣耀时刻 · 全场见证</p>
+    <svg class="champion-trophy" viewBox="0 0 100 100" aria-hidden="true">
+      <defs><linearGradient id="trophy-gold" x2="0.8" y2="1"><stop stop-color="#fff4bb"/><stop offset=".5" stop-color="#f4c75c"/><stop offset="1" stop-color="#a86e20"/></linearGradient></defs>
+      <path d="M30 14h40v25c0 17-9 26-20 26S30 56 30 39zM44 64h12v14H44zM30 80h40v8H30z" fill="url(#trophy-gold)"/>
+      <path d="M30 22H17v11c0 14 9 20 20 20M70 22h13v11c0 14-9 20-20 20" fill="none" stroke="#e8b64f" stroke-width="7"/>
+      <path d="m50 25 4 8 9 1-7 6 2 9-8-4-8 4 2-9-7-6 9-1z" fill="#fff7d7"/>
+    </svg>
+    <p class="champion-announcement" id="champion-dialog-title">比赛冠军是</p>
+    <h2 class="champion-winner" data-champion-winner></h2>
+    <div class="champion-divider" aria-hidden="true"><span>冠军阵容</span></div>
+    <div class="champion-rosters" data-champion-rosters></div>
+    <p class="champion-settlement">四组队长确认完成 · 冠军竞猜已结算</p>
+    <div class="champion-dialog-actions">
+      <button class="btn champion-gold-button" type="button" data-champion-close>为冠军喝彩</button>
+      <a class="btn ghost" href="/standings">查看最终榜单</a>
+    </div>
+  </div>
+</dialog>

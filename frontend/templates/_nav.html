@@ -1,6 +1,7 @@
 <nav class="function-nav" aria-label="功能导航">
   <a class="btn{% if request.path == '/' %} is-active{% endif %}" href="/">首页</a>
   <a class="btn{% if request.path == '/schedule' %} is-active{% endif %}" href="/schedule">查看赛程<span class="live-dot" data-role="live-dot" aria-hidden="true"{% if not has_live %} hidden{% endif %}></span></a>
+  <a class="btn{% if request.path == '/guess' %} is-active{% endif %}" href="/guess">比赛竞猜</a>
   <a class="btn{% if request.path == '/standings' %} is-active{% endif %}" href="/standings">积分榜单</a>
   {% if identity.role == 'student' and not identity.is_spectator %}
   <a class="btn{% if request.path == '/referee' %} is-active{% endif %}" href="/referee">裁判台</a>
@@ -8,3 +9,4 @@
   <span class="version-badge" title="6 局累计比分继承，逐局目标 15/30/45/60/75/90">追分版</span>
 </nav>
 <script src="/static/nav-dot.js?v={{ asset_v }}"></script>
+{% include "_champion_global.html" %}

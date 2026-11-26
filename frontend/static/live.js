@@ -1,6 +1,6 @@
 /* 赛程页实时记分（追分版）：轮询 /api/live，按 rev 只 patch 有变化的卡片。
    - 不整页 reload、不重绘未变化的卡片（与 sync.js 的整页刷新通道互不影响）
-   - 卡片显示本场次累计比分、本局目标分与承接比分；不再有任何竞猜信息
+   - 卡片显示累计比分、本局目标与承接比分，以及竞猜比例和当前用户的预计得分
    - 进行中的局移动到页面顶部「正在进行」区，结束后移回原场次原位
    - 卡片始终按 data-team-a / data-team-b 的绝对组别渲染，不受裁判换边影响 */
 (function () {
@@ -64,6 +64,7 @@
     // 选手名字旁标注本局得分（本局累计分 − 承接分）；双打两人共享同一分数。
     // 只有已开赛（进行中 / 已结束）的局会进入 render，未开赛局占位保持 hidden。
     paintGains(card, d);
+    paintPrediction(card, d);
 
     const strip = q(card, 'score-strip');
     if (strip) strip.hidden = false;
@@ -108,10 +109,62 @@
     }
   }
 
+  function paintPrediction(card, d) {
+    // 竞猜预测：红 = 卡片左侧组、蓝 = 卡片右侧组；押注者才显示预期得分
+    const pred = q(card, 'predict');
+    if (pred) {
+      const p = d.predict;
+      if (!p || d.state === 'finished') {
+        pred.hidden = true;
+      } else {
+        pred.hidden = false;
+        const sum = (p.a_stake || 0) + (p.b_stake || 0);
+        const pct = sum ? (p.a_stake / sum * 100) : 50;
+        const ba = q(card, 'bar-a');
+        const bb = q(card, 'bar-b');
+        if (ba) ba.style.width = pct + '%';
+        if (bb) bb.style.width = (100 - pct) + '%';
+        const bar = q(card, 'predict-bar');
+        if (bar) bar.setAttribute('aria-label',
+          d.team_a + ' 组竞猜 ' + p.a_stake + ' 分，占 ' + pct.toFixed(1) + '%；' +
+          d.team_b + ' 组竞猜 ' + p.b_stake + ' 分，占 ' + (100 - pct).toFixed(1) + '%');
+        const la = q(card, 'legend-a');
+        const lb = q(card, 'legend-b');
+        if (la) la.textContent = d.team_a + ' 组 · 竞猜 ' + p.a_stake + ' 分';
+        if (lb) lb.textContent = d.team_b + ' 组 · 竞猜 ' + p.b_stake + ' 分';
+        const ph = q(card, 'predict-hint');
+        if (ph) {
+          if (d.my_pick && d.expected !== null && d.expected !== undefined) {
+            ph.hidden = false;
+            ph.textContent = '若你押的 ' + d.my_pick + ' 组在本小局先新增十五分，竞猜成功将获得 ' +
+              Number(d.expected).toFixed(2) + ' 分';
+          } else {
+            ph.hidden = true;
+          }
+        }
+      }
+    }
+
+    // 竞猜结算：结束后在卡片最下方给押过这一局的人显示结果
+    const gr = q(card, 'guess-result');
+    if (gr) {
+      const s = d.settled;
+      if (d.state === 'finished' && s) {
+        gr.hidden = false;
+        gr.className = 'guess-result ' + (s.win ? 'is-win' : 'is-loss');
+        gr.textContent = s.win
+          ? '恭喜你竞猜成功，获得 ' + Number(s.gain).toFixed(2) + ' 点竞猜分数'
+          : '很遗憾竞猜失败，未获得竞猜分数';
+      } else {
+        gr.hidden = true;
+        gr.className = 'guess-result';
+        gr.textContent = '';
+      }
+    }
+  }
+
   // 每位选手名旁的「本局得分」徽章。按绝对组别计算，与换边无关；双打两人共享。
-  // 容错：旧后端可能还没有 gain_a/gain_b 字段，旧模板也可能没有占位节点，
-  // 因此这里用 score - start 兜底计算，并在缺少占位时动态补建节点，
-  // 保证只更新静态文件、不重启后端也能正确显示。
+  // 旧后端缺少 gain 字段时用 score - start 兜底，旧模板缺少占位时动态补建。
   function paintGains(card, d) {
     const groups = [
       {
@@ -157,7 +210,7 @@
   }
 
   // 场次卡片：未开赛隐藏；已开赛未打完显示绿色「正在进行中」+ 当前累计比分；
-  // 6 局全部结束改为金色「已完赛」+ 最终累计比分 + 净胜分。
+  // 6 局全部结束改为金色「已完赛」+ 最终累计比分（标签不附净胜分）。
   // 进行中的绿色直接写成内联样式，避免浏览器/CDN 缓存旧 CSS 时退回金色。
   const RUNNING_BG = 'rgba(72, 199, 116, .12)';
   const RUNNING_BORDER = 'rgba(72, 199, 116, .42)';
@@ -176,7 +229,6 @@
     const tag = box.querySelector('[data-role="match-tag"]');
     const lab = box.querySelector('[data-role="finish-label"]');
     const score = box.querySelector('[data-role="finish-score"]');
-    const net = box.querySelector('[data-role="finish-net"]');
     const state = (info && info.state) || (info && info.finished ? 'finished' : 'pending');
     if (state === 'pending') {
       box.hidden = true;
@@ -185,7 +237,6 @@
       if (tag) tag.textContent = '已完赛';
       if (lab) lab.textContent = '累计比分';
       if (score) score.textContent = '';
-      if (net) { net.hidden = true; net.textContent = ''; }
       box.removeAttribute('title');
       return;
     }
@@ -199,15 +250,6 @@
       score.textContent = running
         ? (info.text || '0:0')
         : (info.final_a + ':' + info.final_b);
-    }
-    if (net) {
-      if (!running && info.net !== null && info.net !== undefined) {
-        net.hidden = false;
-        net.textContent = '净胜分 ' + (info.net > 0 ? '+' : '') + info.net;
-      } else {
-        net.hidden = true;
-        net.textContent = '';
-      }
     }
     if (info.title) box.title = info.title;
     else box.removeAttribute('title');
@@ -234,9 +276,11 @@
           liveCount += 1;
           if (d.custom) customLiveCount += 1;
         } else moveHome(card, ref);
-        if (versions[ref] !== d.v) {   // 只更新有变化的卡片
+        // 竞猜展示也参与版本比对，比分未变化时仍能更新比例、个人预计得分与结算。
+        const displayVersion = JSON.stringify([d.v, d.predict, d.my_pick, d.expected, d.settled]);
+        if (versions[ref] !== displayVersion) {
           render(card, d);
-          versions[ref] = d.v;
+          versions[ref] = displayVersion;
         }
       });
       const matchInfo = (data && data.matches) || {};

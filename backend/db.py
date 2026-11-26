@@ -20,6 +20,7 @@ ROSTER 只是「初始名单」：首次启动时写入一次，之后名单以�
 """
 from __future__ import annotations
 
+import json
 import hashlib
 import hmac
 import secrets
@@ -29,7 +30,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+# backend/ 的上一级就是项目根目录，.local/ 与前后端目录同级
+ROOT = Path(__file__).resolve().parent.parent
 LOCAL_DIR = ROOT / ".local"
 DB_PATH = LOCAL_DIR / "match.db"
 
@@ -38,14 +40,14 @@ _PBKDF2_ROUNDS = 120_000
 
 # 初始名单：来自「分组名单」截图，并由用户确认了女生与队长
 ROSTER = {
-    "A": ["王致恒", "张智杰", "肖安峰", "许崇轩", "肖翔", "王海卓"],
-    "B": ["许东辉", "邹浩楠", "陶宋阳", "王文杰", "占恒", "马可欣"],
-    "C": ["马骏青", "刘阳", "李瑞涵", "潘伦蹦", "李涵禹", "邓羽加"],
-    "D": ["丁俊杰", "曹芃淋", "何世远", "卢天浩", "王哲", "董芮嘉", "孔梦茹"],
+    "A": ["王n", "张gy", "肖nd", "许f", "肖yu", "王wz"],
+    "B": ["许go", "邹s", "陶d", "王ts", "占m", "马gw"],
+    "C": ["马ut", "刘jk", "李if", "潘sg", "李yv", "邓ef"],
+    "D": ["丁u", "曹d", "何za", "卢tw", "王cs", "董fp", "孔sh"],
 }
-FEMALES = {"王海卓", "马可欣", "李涵禹", "邓羽加", "董芮嘉", "孔梦茹"}
-CAPTAINS = {"王致恒": "A", "许东辉": "B", "马骏青": "C", "丁俊杰": "D"}
-TEACHERS = ["肖老师", "王老师", "刘老师"]
+FEMALES = {"王wz", "马gw", "李yv", "邓ef", "董fp", "孔sh"}
+CAPTAINS = {"王n": "A", "许go": "B", "马ut": "C", "丁u": "D"}
+TEACHERS = ["D老师", "L老师", "Z老师"]
 
 # 单场 6 局：局次、项目、上场人数。局次与项目固定，队长只调整上场人员。
 GAMES = [
@@ -252,6 +254,33 @@ def init_db() -> None:
             -- winner 列仅为兼容旧库保留；追分版不按小局记录胜方，
             -- 场次胜场由逐分流水推导（整场先到 90 分者），不落库。
             -- 比分永远按赛程的 team_a / team_b 绝对组别存储，换边只改界面位置。
+            -- 竞猜选择独立保存，不触发名单/赛程的全站刷新。
+            -- game 按本局增量先到十五分判定；champion 按最终小组榜结算。
+            CREATE TABLE IF NOT EXISTS tournament_confirmations (
+                team TEXT PRIMARY KEY, captain TEXT NOT NULL,
+                confirmed_at TEXT NOT NULL, fingerprint TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS tournament_result (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                finalized_at TEXT NOT NULL, snapshot TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS tournament_champion_dismissals (
+                name TEXT NOT NULL, finalized_at TEXT NOT NULL, dismissed_at TEXT NOT NULL,
+                PRIMARY KEY (name, finalized_at)
+            );
+            CREATE TABLE IF NOT EXISTS guesses (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                ref         TEXT NOT NULL,
+                pick        TEXT NOT NULL,
+                stake       INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                UNIQUE (name, kind, ref)
+            );
+            CREATE INDEX IF NOT EXISTS idx_guesses_name ON guesses(name);
+
             CREATE TABLE IF NOT EXISTS score_games (
                 ref          TEXT PRIMARY KEY,
                 match_id     INTEGER NOT NULL,
@@ -398,6 +427,10 @@ def init_db() -> None:
             END;
             """
         )
+        cols = {row["name"] for row in db.execute("PRAGMA table_info(guesses)")}
+        if "stake" not in cols:
+            db.execute("ALTER TABLE guesses ADD COLUMN stake INTEGER NOT NULL DEFAULT 1")
+            db.execute("UPDATE guesses SET stake = 2 WHERE name IN (SELECT name FROM teachers)")
         seeded = db.execute(
             "SELECT 1 FROM meta WHERE key = 'roster_seeded'"
         ).fetchone()
@@ -423,6 +456,23 @@ def init_db() -> None:
     _migrate_lineups_v2()
     _ensure_score_columns()
     _ensure_match_lineup_snapshots()
+    _ensure_admin_shared_columns()
+
+
+def _ensure_admin_shared_columns() -> None:
+    """后台管理共用的字段：比赛名称/时间/状态、队员与老师的启用状态。"""
+    with connection() as db:
+        specs = (
+            ("matches", "name", "TEXT NOT NULL DEFAULT ''"),
+            ("matches", "match_time", "TEXT NOT NULL DEFAULT ''"),
+            ("matches", "status", "TEXT NOT NULL DEFAULT '未开始'"),
+            ("players", "enabled", "INTEGER NOT NULL DEFAULT 1"),
+            ("teachers", "enabled", "INTEGER NOT NULL DEFAULT 1"),
+        )
+        for table, column, ddl in specs:
+            cols = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def _ensure_match_lineup_snapshots() -> None:
@@ -764,7 +814,16 @@ def find_player(name: str):
 
 def is_teacher(name: str) -> bool:
     with connection() as db:
-        return db.execute("SELECT 1 FROM teachers WHERE name = ?", (name,)).fetchone() is not None
+        return db.execute(
+            "SELECT 1 FROM teachers WHERE name = ? AND enabled = 1", (name,)
+        ).fetchone() is not None
+
+
+def is_player_enabled(name: str) -> bool:
+    """后台禁用的队员不能登录；名单外的观众账号不受限制。"""
+    with connection() as db:
+        row = db.execute("SELECT enabled FROM players WHERE name = ?", (name,)).fetchone()
+    return bool(row["enabled"]) if row else True
 
 
 def team_members(team: str):
@@ -1234,13 +1293,184 @@ def publish_lineup(team: str, operator: str, publish: bool):
 裁判每点一次加分写一条逐分流水；任一方累计分达到本局目标，本局即结束，
 比分原样带入下一局。第 6 局打到 90 分整场完赛。
 
-本版本不产生、不存储、不展示「本局胜方」，winner 列仅为兼容旧库保留且永远为 NULL。
+比赛计分不存储「本局胜方」，winner 列仅为兼容旧库保留且永远为 NULL。
+竞猜独立按本局新增十五分的先后顺序推导结果，不改变追分制记分规则。
 整场胜场改为实时推导：逐分流水中第一次累计到 90 分的一方记 1 胜，
 只统计 6 局全部结束的场次，不落库。
 """
 GAME_TARGETS = {g["no"]: 15 * g["no"] for g in GAMES}
 GAME_SWITCH = {g["no"]: 15 * (g["no"] - 1) + 8 for g in GAMES}
-_score_lock = threading.Lock()
+_score_lock = threading.RLock()
+
+
+def save_guess(name: str, kind: str, ref: str, pick: str, stake: int = 1) -> bool:
+    """写入（或覆盖）某用户的单条竞猜，并快照该用户的下注分数。
+
+    stake（学生/观众 1、老师 2）同时是竞猜计分公式里的「基础分数」。
+    同一 (name, kind, ref) 只保留最新一次。
+    """
+    now = _now()
+    with _score_lock, connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT 1 FROM tournament_result WHERE id = 1").fetchone():
+            return False
+        if kind == "champion":
+            locked = db.execute("SELECT 1 FROM score_games LIMIT 1").fetchone()
+        else:
+            locked = db.execute("SELECT 1 FROM score_games WHERE ref = ?", (ref,)).fetchone()
+        if locked:
+            return False
+        db.execute(
+            """
+            INSERT INTO guesses (name, kind, ref, pick, stake, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name, kind, ref) DO UPDATE SET
+                pick = excluded.pick,
+                stake = excluded.stake,
+                updated_at = excluded.updated_at
+            """,
+            (name, kind, ref, pick, int(stake), now, now),
+        )
+    return True
+
+
+def delete_guess(name: str, kind: str, ref: str) -> bool:
+    """删除某用户的单条竞猜（取消选择），无记录时静默忽略。"""
+    with _score_lock, connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT 1 FROM tournament_result WHERE id = 1").fetchone():
+            return False
+        if kind == "champion":
+            locked = db.execute("SELECT 1 FROM score_games LIMIT 1").fetchone()
+        else:
+            locked = db.execute("SELECT 1 FROM score_games WHERE ref = ?", (ref,)).fetchone()
+        if locked:
+            return False
+        db.execute(
+            "DELETE FROM guesses WHERE name = ? AND kind = ? AND ref = ?",
+            (name, kind, ref),
+        )
+    return True
+
+
+def get_user_guesses(name: str):
+    """返回该用户已提交的竞猜，按类型分组供页面渲染。
+
+    返回 {"champion": 组别或 None, "games": {ref: pick}}。
+    """
+    with connection() as db:
+        rows = db.execute(
+            "SELECT kind, ref, pick FROM guesses WHERE name = ?", (name,)
+        ).fetchall()
+    champion = None
+    games: dict[str, str] = {}
+    for row in rows:
+        if row["kind"] == "champion":
+            champion = row["pick"]
+        elif row["kind"] == "game":
+            games[row["ref"]] = row["pick"]
+    return {"champion": champion, "games": games}
+
+
+def champion_counts() -> dict[str, int]:
+    """各组被猜夺冠的人次统计（只显示计数，不暴露具体姓名）。"""
+    with connection() as db:
+        rows = db.execute(
+            "SELECT pick, COUNT(*) AS cnt FROM guesses "
+            "WHERE kind = 'champion' GROUP BY pick"
+        ).fetchall()
+    return {row["pick"]: row["cnt"] for row in rows}
+
+
+def has_started_game() -> bool:
+    with connection() as conn:
+        return conn.execute("SELECT 1 FROM score_games UNION ALL SELECT 1 FROM tournament_result LIMIT 1").fetchone() is not None
+
+
+def guess_winner(game: dict, match: dict, events: list) -> str | None:
+    """本局增量率先达到十五分的一方；承接分不参与，撤销后按现存流水重算。"""
+    for event in events:
+        if event["score_a"] - (game["start_a"] or 0) >= 15:
+            return match["team_a"]
+        if event["score_b"] - (game["start_b"] or 0) >= 15:
+            return match["team_b"]
+    # 无流水的旧数据仅在一方达标时可确定；双方达标无法推断先后。
+    if not events:
+        a = game["score_a"] - (game["start_a"] or 0) >= 15
+        b = game["score_b"] - (game["start_b"] or 0) >= 15
+        if a != b:
+            return match["team_a"] if a else match["team_b"]
+    return None
+
+
+def guess_results(viewer_name: str = "") -> dict:
+    games = all_score_games()
+    matches = {m["id"]: m for m in all_matches()}
+    with connection() as conn:
+        rows = conn.execute("SELECT * FROM score_events ORDER BY ref, seq").fetchall()
+        guesses = conn.execute("SELECT * FROM guesses WHERE kind = 'game'").fetchall()
+    events = {}
+    stakes = {}
+    mine = {}
+    for row in rows:
+        events.setdefault(row["ref"], []).append(row)
+    for row in guesses:
+        stat = stakes.setdefault(row["ref"], {}).setdefault(row["pick"], {"count": 0, "stake": 0})
+        stat["count"] += 1
+        stat["stake"] += row["stake"]
+        if row["name"] == viewer_name:
+            mine[row["ref"]] = row
+    result = {}
+    for ref, game in games.items():
+        match = matches.get(game["match_id"])
+        if not match:
+            continue
+        winner = guess_winner(game, match, events.get(ref, []))
+        stats = stakes.get(ref, {})
+        a_stat = stats.get(match["team_a"], {"count": 0, "stake": 0})
+        b_stat = stats.get(match["team_b"], {"count": 0, "stake": 0})
+        predict = None
+        if a_stat["stake"] + b_stat["stake"] > 0:
+            predict = {"a_count": a_stat["count"], "b_count": b_stat["count"],
+                       "a_stake": a_stat["stake"], "b_stake": b_stat["stake"]}
+        pick = mine.get(ref)
+        expected = None
+        settled = None
+        if pick:
+            own = stakes[ref][pick["pick"]]
+            other_team = match["team_b"] if pick["pick"] == match["team_a"] else match["team_a"]
+            other = stakes[ref].get(other_team, {"stake": 0})
+            expected = round(guess_gain(pick["stake"], own["count"], other["stake"]), 2)
+            if game["state"] == "finished" and winner:
+                settled = {"win": pick["pick"] == winner,
+                           "gain": expected if pick["pick"] == winner else 0.0}
+        result[ref] = {"state": game["state"], "winner": winner,
+                       "my_pick": pick["pick"] if pick else None,
+                       "expected": expected, "settled": settled, "predict": predict,
+                       "gain_a": game["score_a"] - (game["start_a"] or 0),
+                       "gain_b": game["score_b"] - (game["start_b"] or 0)}
+    return result
+
+
+def guess_gain(stake: int, own_count: int, other_stake: int) -> float:
+    """单局猜中所得分数的唯一口径。
+
+    自己的下注分数 + 对方组押注分数之和 ÷ 己方押注人数。
+    赛程卡片的预计得分、结算结果与积分榜单共用，避免三处公式漂移。
+    此处不四舍五入：榜单按局累加后统一格式化，卡片展示时再保留两位小数。
+    """
+    return float(stake) + (float(other_stake) / own_count if own_count else 0.0)
+
+
+def guess_stake_map(ref: str) -> dict[str, dict]:
+    """某局各组的押注统计：人数与下注分数之和。"""
+    with connection() as db:
+        rows = db.execute(
+            "SELECT pick, COUNT(*) AS cnt, COALESCE(SUM(stake), 0) AS total "
+            "FROM guesses WHERE kind = 'game' AND ref = ? GROUP BY pick", (ref,)
+        ).fetchall()
+    return {row["pick"]: {"count": row["cnt"], "stake": row["total"]}
+            for row in rows}
 
 
 def game_rule(game_no: int) -> dict:
@@ -1374,6 +1604,40 @@ def start_score_game(ref: str, match_id: int, game_no: int,
     return True, "比赛已开始"
 
 
+def _serve_hint(conn, ref: str, team_a: str, team_b: str) -> dict:
+    """按羽毛球双打发球轮转口径给出「换边 / 哪侧发球」提示。
+
+    - 发球方 = 最近一分的得分方；本局尚无流水时默认 team_a 发球。
+    - 最近两分由同一方拿下（连续得分）= 发球方赢下自己的发球轮，需换发球区；
+      否则是接发方得分转为发球，不换边，只提示由哪侧发球。
+    - 发球区按发球方当前累计分的奇偶判断：偶数右区、奇数左区。
+    """
+    row = conn.execute(
+        "SELECT score_a, score_b FROM score_games WHERE ref = ?", (ref,)
+    ).fetchone()
+    if not row:
+        return {"team": "", "side": "", "streak": False, "text": ""}
+    events = conn.execute(
+        "SELECT scoring_team FROM score_events WHERE ref = ? ORDER BY seq DESC LIMIT 2",
+        (ref,),
+    ).fetchall()
+    server = events[0]["scoring_team"] if events else team_a
+    streak = bool(len(events) >= 2 and events[1]["scoring_team"] == server)
+    own_score = row["score_a"] if server == team_a else row["score_b"]
+    side = "右" if own_score % 2 == 0 else "左"
+    text = (
+        "%s组连续得分，%s组换边，由%s侧发球" % (server, server, side)
+        if streak else "%s组不换边，由%s侧发球" % (server, side)
+    )
+    return {"team": server, "side": side, "streak": streak, "text": text}
+
+
+def serve_hint(ref: str, team_a: str, team_b: str) -> dict:
+    """裁判台进入记分卡片时使用的发球提示（独立读取连接）。"""
+    with connection() as conn:
+        return _serve_hint(conn, ref, team_a, team_b)
+
+
 def add_point(ref: str, scoring_team: str, team_a: str, team_b: str) -> dict:
     """加一分：追加逐分流水，累计比分 +1，返回换边 / 达到本局目标的提示。
 
@@ -1419,6 +1683,7 @@ def add_point(ref: str, scoring_team: str, team_a: str, team_b: str) -> dict:
             "start_a": row["start_a"], "start_b": row["start_b"],
             "target": target, "switch_at": switch_at,
             "need_switch": need_switch, "reached_end": reached_end,
+            "serve": _serve_hint(db, ref, team_a, team_b),
         }
 
 
@@ -1453,10 +1718,18 @@ def undo_point(ref: str) -> dict:
             (a, b, ref),
         )
         _bump_rev(db, ref)
+        sides = db.execute(
+            "SELECT team_a, team_b FROM matches WHERE id = ?", (row["match_id"],)
+        ).fetchone()
+        serve = (
+            _serve_hint(db, ref, sides["team_a"], sides["team_b"])
+            if sides else {"team": "", "side": "", "streak": False, "text": ""}
+        )
         return {
             "ok": True, "ref": ref, "score_a": a, "score_b": b,
             "state": "running", "need_switch": False, "reached_end": False,
             "target": row["target"], "switch_at": row["switch_at"],
+            "serve": serve,
         }
 
 
@@ -1503,11 +1776,11 @@ def finish_score_game(ref: str) -> dict:
         }
 
 
-def live_payload() -> dict[str, dict]:
+def live_payload(viewer_name: str = "") -> dict[str, dict]:
     """/api/live 的数据源：返回所有已开赛局的展示数据。
 
     前端按 v（rev）比对，只 patch 发生变化的卡片，不整页 reload。
-    追分版不再包含任何竞猜预测 / 结算字段。
+    竞猜比例对所有用户可见，个人预计得分与结算仅返回当前用户的数据。
     """
     games = all_score_games()
     if not games:
@@ -1524,6 +1797,7 @@ def live_payload() -> dict[str, dict]:
             "team": row["scoring_team"],
             "a": row["score_a"], "b": row["score_b"],
         })
+    predictions = guess_results(viewer_name)
     result = {}
     for ref, g in games.items():
         m = matches.get(g["match_id"])
@@ -1545,6 +1819,10 @@ def live_payload() -> dict[str, dict]:
             "switched": g["switched"],
             "court_input": g["court_input"], "referee": g["referee"],
             "rallies": events.get(ref, []),
+            "predict": predictions.get(ref, {}).get("predict"),
+            "expected": predictions.get(ref, {}).get("expected"),
+            "my_pick": predictions.get(ref, {}).get("my_pick"),
+            "settled": predictions.get(ref, {}).get("settled"),
         }
     return result
 
@@ -1924,8 +2202,80 @@ def custom_delete(match_id: int):
 
 
 # ----------------------------- 积分榜单 -----------------------------
+def guess_rank_key(row: dict) -> tuple:
+    """总积分降序、单局最高分降序、猜中次数升序、总竞猜次数升序、姓名。"""
+    return (-row["score"], -row["max_gain"], row["hits"], row["bets"], row["name"])
+
+
+def _guess_leaderboard(games=None, matches=None) -> list[dict]:
+    """小局积分和最高单次得分共用结算公式；总竞猜次数含小局和冠军选择。"""
+    if games is None:
+        games = all_score_games()
+    if matches is None:
+        matches = {match["id"]: match for match in all_matches()}
+    outcomes = guess_results()
+    # 竞猜记分：猜中按「基础分 + 对方组押注分数 / 己方押注人数」，猜错 0 分
+    with connection() as db:
+        guess_rows = db.execute(
+            "SELECT name, kind, ref, pick, stake FROM guesses"
+        ).fetchall()
+        player_names = {r["name"] for r in db.execute("SELECT name FROM players")}
+        teacher_names = {r["name"] for r in db.execute("SELECT name FROM teachers")}
+    by_ref: dict[str, dict[str, dict]] = {}
+    for r in guess_rows:
+        if r["kind"] != "game":
+            continue
+        g = games.get(r["ref"])
+        if not g or g["state"] != "finished":
+            continue
+        by_ref.setdefault(r["ref"], {}).setdefault(
+            r["pick"], {"count": 0, "stake": 0}
+        )
+        by_ref[r["ref"]][r["pick"]]["count"] += 1
+        by_ref[r["ref"]][r["pick"]]["stake"] += r["stake"]
+
+    guess_stat: dict[str, dict] = {}
+    for r in guess_rows:
+        st = guess_stat.setdefault(r["name"], {
+            "name": r["name"], "score": 0.0, "hits": 0, "bets": 0,
+            "max_gain": 0.0, "game_bets": 0,
+        })
+        # 有竞猜记录就上榜：未开赛 / 未结算的显示 0.00 分
+        st["bets"] += 1
+        if r["kind"] != "game":
+            continue
+        st["game_bets"] += 1
+        g = games.get(r["ref"])
+        if not g or g["state"] != "finished":
+            continue
+        if r["pick"] != outcomes.get(r["ref"], {}).get("winner"):
+            continue
+        m = matches.get(g["match_id"])
+        if not m:
+            continue
+        stats = by_ref.get(r["ref"], {})
+        own = stats.get(r["pick"], {"count": 0, "stake": 0})
+        other_team = m["team_b"] if r["pick"] == m["team_a"] else m["team_a"]
+        other = stats.get(other_team, {"count": 0, "stake": 0})
+        gain = guess_gain(r["stake"], own["count"], other["stake"])
+        st["score"] += gain
+        st["max_gain"] = max(st["max_gain"], gain)
+        st["hits"] += 1
+    guess_rows_out = []
+    for st in guess_stat.values():
+        guess_rows_out.append({
+            **st,
+            "score_text": f"{st['score']:.2f}",
+            "max_gain_text": f"{st['max_gain']:.2f}",
+            "is_spectator": st["name"] not in player_names
+                            and st["name"] not in teacher_names,
+        })
+    guess_rows_out.sort(key=guess_rank_key)
+    return guess_rows_out
+
+
 def standings() -> dict:
-    """两张榜的实时聚合，全部由 score_games / score_events 派生。
+    """三张榜的实时聚合，由 score_games / score_events / guesses 派生。
 
     组别榜：先按胜场排名，胜场相同再按净胜分（净胜分 = 与三个对手组打完后的
     累计比分差之和，只统计 6 局全部结束的场次），胜场与净胜分都相同才并列
@@ -1936,6 +2286,20 @@ def standings() -> dict:
     最高连得 = 按逐分流水算、单局内己方连续得分的最长段，换局清零，取最大值。
     自定义对局按上场人员把本方最终得分计入选手得分、参与局数 +1、连得并入最高连得。
     """
+    with connection() as conn:
+        final = conn.execute("SELECT snapshot FROM tournament_result WHERE id = 1").fetchone()
+    if final:
+        board = json.loads(final["snapshot"])
+        # 兼容升级前的最终榜单：仅补充新统计，保留已结算的积分和猜中次数。
+        fields = ("max_gain", "max_gain_text", "game_bets")
+        if any(any(field not in row for field in fields) for row in board["guesses"]):
+            history = {row["name"]: row for row in _guess_leaderboard()}
+            for row in board["guesses"]:
+                stats = history.get(row["name"], {"max_gain": 0.0, "max_gain_text": "0.00", "game_bets": 0})
+                for field in fields:
+                    row.setdefault(field, stats[field])
+        board["guesses"].sort(key=guess_rank_key)
+        return board
     games = all_score_games()
     matches = {m["id"]: m for m in all_matches()}
     # 按「场次 + 组」取实际阵容：开赛时已固化，后续改安排不影响已结束局的选手归属。
@@ -2075,9 +2439,14 @@ def standings() -> dict:
         player_stat.values(),
         key=lambda x: (-x["points"], -x["best_streak"], -x["games"], x["name"]),
     )
+    # 冠军竞猜仅在四位队长确认并保存最终榜单时结算。
+    champion = None
+    guess_rows_out = _guess_leaderboard(games, matches)
     return {
         "teams": team_rows,
         "players": player_rows,
+        "guesses": guess_rows_out,
+        "champion": champion,
         "finished_games": sum(1 for g in games.values() if g["state"] == "finished"),
         "total_games": len(matches) * len(GAMES),
         # 已完赛场次含自定义对局；总场次 = 6 场正式 + 所有已创建的自定义对局。
@@ -2085,3 +2454,93 @@ def standings() -> dict:
                              + len(custom_rows)),
         "total_matches": len(matches) + custom_total,
     }
+
+
+# ----------------------------- 四队长确认结束 -----------------------------
+def _tournament_fingerprint(conn) -> str:
+    tables = ("score_games", "score_events", "custom_matches", "custom_match_events",
+              "players", "team_lineups", "match_lineups")
+    state = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
+             for table in tables}
+    return hashlib.sha256(json.dumps(state, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def tournament_is_finalized() -> bool:
+    with connection() as conn:
+        return conn.execute("SELECT 1 FROM tournament_result WHERE id = 1").fetchone() is not None
+
+
+def tournament_status(viewer_name: str = "") -> dict:
+    with connection() as conn:
+        final = conn.execute("SELECT * FROM tournament_result WHERE id = 1").fetchone()
+        dismissed = bool(final and conn.execute(
+            "SELECT 1 FROM tournament_champion_dismissals WHERE name = ? AND finalized_at = ?",
+            (viewer_name, final["finalized_at"]),
+        ).fetchone())
+        fingerprint = _tournament_fingerprint(conn) if not final else None
+        confirmations = [dict(row) for row in conn.execute(
+            "SELECT team, captain, confirmed_at FROM tournament_confirmations "
+            + ("WHERE fingerprint = ? " if not final else "") + "ORDER BY team",
+            (fingerprint,) if not final else (),
+        )]
+    board = json.loads(final["snapshot"]) if final else {}
+    return {"finalized": bool(final), "finalized_at": final["finalized_at"] if final else None,
+            "celebration_dismissed": dismissed,
+            "confirmations": confirmations, "confirmed_teams": [r["team"] for r in confirmations],
+            "confirmed_count": len(confirmations), "teams": list(ROSTER),
+            "champions": board.get("champions", []),
+            "champion_rosters": board.get("champion_rosters", {})}
+
+
+def dismiss_champion_celebration(name: str, finalized_at: str) -> bool:
+    with connection() as conn:
+        final = conn.execute("SELECT finalized_at FROM tournament_result WHERE id = 1").fetchone()
+        if not final or finalized_at != final["finalized_at"]:
+            return False
+        conn.execute("INSERT OR IGNORE INTO tournament_champion_dismissals VALUES (?, ?, ?)",
+                     (name, finalized_at, _now()))
+    return True
+
+
+def confirm_tournament_end(team: str, captain: str) -> dict:
+    """同一榜单版本需四组各确认一次，最后一次确认原子保存排名与竞猜结算快照。"""
+    with _score_lock, connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        authorized = conn.execute(
+            "SELECT 1 FROM players WHERE name = ? AND team = ? AND is_captain = 1",
+            (captain, team),
+        ).fetchone()
+        if team not in ROSTER or not authorized:
+            return {"ok": False, "error": "仅本组队长可确认比赛结束"}
+        if conn.execute("SELECT 1 FROM tournament_result WHERE id = 1").fetchone():
+            return {"ok": True, "finalized": True}
+        running = conn.execute("SELECT 1 FROM score_games WHERE state = 'running' UNION ALL "
+                               "SELECT 1 FROM custom_matches WHERE state = 'running' LIMIT 1").fetchone()
+        if running:
+            return {"ok": False, "error": "仍有进行中的对局，请裁判确认结束后再确认比赛结束"}
+        fingerprint = _tournament_fingerprint(conn)
+        conn.execute("DELETE FROM tournament_confirmations WHERE fingerprint <> ?", (fingerprint,))
+        conn.execute("INSERT OR IGNORE INTO tournament_confirmations VALUES (?, ?, ?, ?)",
+                     (team, captain, _now(), fingerprint))
+        confirmed = {row["team"] for row in conn.execute("SELECT team FROM tournament_confirmations")}
+        finalized = set(ROSTER).issubset(confirmed)
+        if finalized:
+            board = standings()
+            champions = [row["team"] for row in board["teams"] if row["rank"] == 1]
+            board["champions"] = champions
+            board["champion"] = champions[0] if len(champions) == 1 else None
+            board["champion_rosters"] = {
+                t: [r["name"] for r in conn.execute("SELECT name FROM players WHERE team = ? ORDER BY sort_order, name", (t,))]
+                for t in champions
+            }
+            winners = {row["name"] for row in conn.execute("SELECT name, pick FROM guesses WHERE kind = 'champion'")
+                       if row["pick"] in champions}
+            for row in board["guesses"]:
+                if row["name"] in winners:
+                    row["score"] += 5.0
+                    row["hits"] += 1
+                    row["score_text"] = f"{row['score']:.2f}"
+            board["guesses"].sort(key=guess_rank_key)
+            conn.execute("INSERT INTO tournament_result VALUES (1, ?, ?)",
+                         (_now(), json.dumps(board, ensure_ascii=False)))
+        return {"ok": True, "finalized": finalized, "confirmed_count": len(confirmed)}

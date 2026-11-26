@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <meta name="csrf-token" content="{{ csrf }}">
+  <title>积分榜单 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+</head>
+<body class="app-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · 积分榜单</span>
+    </div>
+    <div class="topbar-actions">
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+    <section class="hero">
+      <p class="hero-kicker">已结束 {{ data.finished_games }} / {{ data.total_games }} 局 · 已完赛 {{ data.finished_matches }} / {{ data.total_matches }} 场次</p>
+      <h1>积分榜单</h1>
+      <p class="hero-sub">小组积分、选手积分与竞猜积分三张榜：小组先按胜场、再按净胜分排名，选手记录参与小局获得的分数与最高连得。</p>
+    </section>
+
+    <!-- 1. 小组胜场积分 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>小组胜场积分</h2>
+        <span class="count">统计 6 局打完的场次与已结束的自定义对局</span>
+      </div>
+      <div class="table-wrap">
+        <table class="rank-table">
+          <thead>
+            <tr><th>名次</th><th>组别</th><th>胜场</th><th>已完赛场次</th><th>净胜分</th></tr>
+          </thead>
+          <tbody>
+            {% for row in data.teams %}
+            <tr>
+              <td class="rank-no">{{ row.rank }}</td>
+              <td><strong>{{ row.team }} 组</strong></td>
+              <td>{{ row.wins }}</td>
+              <td>{{ row.matches }}</td>
+              <td class="{% if row.net > 0 %}is-plus{% elif row.net < 0 %}is-minus{% endif %}">{{ row.net_text }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="empty-hint">胜场 = 整场先到 90 分的一方记 1 胜，加已结束的自定义对局胜方各 1 胜；净胜分 = 与三个对手组打完后的最终累计比分差之和（如 90:87 → +3 / −3），加上自定义对局的比分差；已完赛场次 = 正式比分打满 6 局的场次 + 已结束的自定义对局（双方各记 1 场）。名次先按胜场，胜场相同时按净胜分，胜场与净胜分都相同时并列同名次。</p>
+    </section>
+
+    <!-- 2. 选手积分 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>选手积分</h2>
+        <span class="count">双打两人共享本局得分</span>
+      </div>
+      {% if data.players %}
+      <div class="table-wrap">
+        <table class="rank-table">
+          <thead>
+            <tr><th>名次</th><th>选手</th><th>组别</th><th>参与局数</th><th>得分</th><th>最高连得</th></tr>
+          </thead>
+          <tbody>
+            {% for row in data.players %}
+            <tr>
+              <td class="rank-no">{{ loop.index }}</td>
+              <td><strong>{{ row.name }}</strong></td>
+              <td>{{ row.team }} 组</td>
+              <td>{{ row.games }}</td>
+              <td>{{ row.points }}</td>
+              <td>{{ row.best_streak }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="empty-hint">还没有已结束的小局，选手数据会在裁判确认本局结束后出现。</p>
+      {% endif %}
+      <p class="empty-hint">得分 = 参与的已结束小局中己方在该局的增量得分之和，加上自定义对局中本方的最终得分；最高连得 = 按逐分流水计算、单局内己方连续得分的最长一段，换局清零后取各局最大值。排序：得分 → 最高连得 → 参与局数。</p>
+    </section>
+    <!-- 3. 竞猜积分 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>竞猜积分</h2>
+        <span class="count">分数保留两位小数</span>
+      </div>
+      {% if data.guesses %}
+      <div class="table-wrap">
+        <table class="rank-table">
+          <thead>
+            <tr><th>名次</th><th>姓名</th><th>得分</th><th>最高单次得分</th><th>猜中次数</th><th>竞猜局数</th></tr>
+          </thead>
+          <tbody>
+            {% for row in data.guesses %}
+            <tr>
+              <td class="rank-no">{{ loop.index }}</td>
+              <td><strong>{{ row.name }}</strong>{% if row.is_spectator %}<span class="tag-spectator">观众</span>{% endif %}</td>
+              <td class="score-value">{{ row.score_text }}</td>
+              <td class="score-value">{{ row.max_gain_text }}</td>
+              <td>{{ row.hits }}</td>
+              <td>{{ row.bets }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="empty-hint">还没有竞猜记录，参与竞猜后即可在这里看到得分。</p>
+      {% endif %}
+      <p class="empty-hint">排序依次为：积分最多 → 最高单次得分最高 → 猜中次数最少 → 竞猜局数最少；四项完全相同才按姓名字符顺序排列。最高单次得分为已结算小局竞猜所得分数的最大值，不含冠军竞猜加分；竞猜局数统计小局竞猜与冠军竞猜，最多为 36 小局 + 1 次冠军竞猜 = 37 次，包含已提交但未结算的选择。分数按实际值排序，显示保留两位小数。</p>
+      <p class="empty-hint">小局以本局新增得分率先达到十五分的一方为预测成功，裁判确认结束后结算。猜错不扣分；冠军竞猜猜中 +5 分并计入猜中次数（四组队长确认比赛结束后，按最终排名结算；并列冠军组的竞猜均视为猜中）。具体计分公式见「比赛竞猜」页的说明。</p>
+    </section>
+    <section class="panel tournament-end-panel" id="tournament-end" data-finalized="{{ '1' if tournament.finalized else '0' }}">
+      <div class="panel-head">
+        <h2>比赛结束确认</h2>
+        <span class="count" data-tournament-progress>{{ '比赛已结束' if tournament.finalized else tournament.confirmed_count ~ ' / 4 组已确认' }}</span>
+      </div>
+      <p class="empty-hint">四位队长分别确认后，保存当前最终排名并结算冠军竞猜。排名先比胜场，再比净胜分；并列第一为并列冠军。确认期间若比赛记录或名单变化，需要各组重新确认。</p>
+      <div class="end-confirm-grid">
+        {% for team in tournament.teams %}
+        <div class="end-team-status{% if team in tournament.confirmed_teams %} is-confirmed{% endif %}" data-confirm-team="{{ team }}">
+          <strong>{{ team }} 组</strong><span>{{ '已确认' if team in tournament.confirmed_teams else '等待队长确认' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% if identity.role == 'student' and identity.is_captain %}
+      <form method="post" action="/tournament/confirm" id="tournament-confirm-form" data-team="{{ identity.team }}"{% if tournament.finalized %} hidden{% endif %}>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn primary end-confirm-button" type="submit"{% if identity.team in tournament.confirmed_teams %} disabled{% endif %}>{{ '本组已确认' if identity.team in tournament.confirmed_teams else '比赛结束确认' }}</button>
+      </form>
+      {% else %}
+      <p class="empty-hint" data-captain-only{% if tournament.finalized %} hidden{% endif %}>由 A、B、C、D 四组队长分别登录自己的账号确认。</p>
+      {% endif %}
+      <p class="end-feedback" id="tournament-feedback" role="status"></p>
+      <div class="final-champion-summary" data-final-summary{% if not tournament.finalized %} hidden{% endif %}>
+        <p>比赛已结束 · 冠军竞猜已结算 · 最终榜单已保存</p>
+        {% if tournament.finalized %}<h3>{{ '并列冠军' if tournament.champions|length > 1 else '比赛冠军' }}：{{ tournament.champions|join('、') }} 组</h3>{% endif %}
+        <button class="btn champion-replay" type="button" data-champion-open>查看冠军庆祝</button>
+      </div>
+    </section>
+  </main>
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+  <script src="/static/guess-live.js?v={{ asset_v }}"></script>
+</body>
+</html>

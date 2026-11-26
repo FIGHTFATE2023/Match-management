@@ -8,9 +8,10 @@ if errorlevel 1 (
   "%PY%" -m pip install -r requirements.txt
 )
 echo.
-echo   比赛管理系统 · 公网入口
-echo   本机唯一后端 + 隧道转发，本机 / 局域网 / 公网共用同一份数据
-echo   默认 Cloudflare 临时入口；固定域名请用 start-public.cmd --tunnel ngrok
+echo   Match Management System - Public Entry
+echo   One backend + tunnel: local / LAN / public share the same data
+echo   Default: Cloudflare temporary tunnel
+echo   Fixed URL: start-public.cmd --tunnel ngrok
 echo.
-"%PY%" public_tunnel.py %*
+"%PY%" backend\public_tunnel.py %*
 pause

@@ -1,0 +1,100 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ '编辑账号' if mode == 'edit' else '新增账号' }}{% endblock %}
+{% block crumb %}{{ '编辑账号' if mode == 'edit' else '新增账号' }}{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>{{ '编辑账号' if mode == 'edit' else '新增账号' }}</h1>
+      <p>带 <em>*</em> 为必填项；此处直接维护前台真实名单，改名后请用新姓名登录。</p>
+    </div>
+    <a class="btn ghost" href="{{ url_for('admin.accounts') }}">← 返回列表</a>
+  </section>
+
+  <section class="panel form-panel">
+    <form method="post" class="edit-form"
+          {% if mode == 'edit' %}data-confirm="确认保存对「{{ data.username }}」的修改？"{% endif %}>
+      <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+      {% if mode == 'edit' %}<input type="hidden" name="id" value="{{ item.key }}">{% endif %}
+
+      <div class="field-row">
+        <label class="field">
+          <span>账号类型 <em>*</em></span>
+          <select name="source" id="source-select"{% if mode == 'edit' %} disabled{% endif %}>
+            <option value="player"{% if data.source == 'player' %} selected{% endif %}>队员</option>
+            <option value="teacher"{% if data.source == 'teacher' %} selected{% endif %}>老师</option>
+          </select>
+          {% if mode == 'edit' %}<input type="hidden" name="source" value="{{ data.source }}">{% endif %}
+        </label>
+        <label class="field">
+          <span>姓名 <em>*</em></span>
+          <input type="text" name="username" value="{{ data.username }}" maxlength="20" required placeholder="登录时使用的姓名">
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field" id="role-field">
+          <span>角色</span>
+          <select name="role" id="role-select">
+            <option value="队员"{% if data.role == '队员' %} selected{% endif %}>队员</option>
+            <option value="队长"{% if data.role == '队长' %} selected{% endif %}>队长</option>
+            <option value="老师"{% if data.role == '老师' %} selected{% endif %}>老师</option>
+          </select>
+        </label>
+        <label class="field" id="team-field">
+          <span>参赛组别</span>
+          <select name="team">
+            {% for t in team_choices %}
+              <option value="{{ t }}"{% if data.team == t %} selected{% endif %}>{{ t }} 组</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field" id="gender-field">
+          <span>性别</span>
+          <select name="gender">
+            {% for g in gender_choices %}
+              <option value="{{ g }}"{% if data.gender == g %} selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>排序值</span>
+          <input type="number" name="sort_order" value="{{ data.sort_order }}" step="1">
+        </label>
+      </div>
+
+      <label class="check-field">
+        <input type="checkbox" name="enabled" value="1"{% if data.enabled %} checked{% endif %}>
+        <span>启用该账号（取消勾选即禁用，对方立即无法登录）</span>
+      </label>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">{{ '确认保存' if mode == 'edit' else '确认新增' }}</button>
+        <a class="btn ghost" href="{{ url_for('admin.accounts') }}">取消</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var source = document.getElementById('source-select');
+  if (!source) return;
+  function sync() {
+    var isTeacher = source.value === 'teacher';
+    var role = document.getElementById('role-select');
+    var team = document.getElementById('team-field');
+    var gender = document.getElementById('gender-field');
+    if (isTeacher && role) role.value = '老师';
+    if (team) team.hidden = isTeacher;
+    if (gender) gender.hidden = isTeacher;
+  }
+  source.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endblock %}

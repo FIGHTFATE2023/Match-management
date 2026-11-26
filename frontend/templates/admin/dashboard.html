@@ -1,0 +1,67 @@
+{% extends "admin/base.html" %}
+{% block title %}概览{% endblock %}
+{% block crumb %}概览{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>管理概览</h1>
+      <p>直接维护前台真实比赛与队员 / 老师账号，保存后在线页面立即同步。当前数据版本 v{{ revision }}。</p>
+    </div>
+  </section>
+
+  <section class="stat-grid">
+    <a class="stat-card" href="{{ url_for('admin.competitions') }}">
+      <span class="stat-label">比赛总数</span>
+      <strong class="stat-value">{{ comp_total }}</strong>
+      <span class="stat-foot">查看全部 →</span>
+    </a>
+    <a class="stat-card" href="{{ url_for('admin.competitions', status='进行中') }}">
+      <span class="stat-label">进行中</span>
+      <strong class="stat-value stat-accent">{{ comp_running }}</strong>
+      <span class="stat-foot">按状态筛选 →</span>
+    </a>
+    <a class="stat-card" href="{{ url_for('admin.accounts') }}">
+      <span class="stat-label">账号总数</span>
+      <strong class="stat-value">{{ acc_total }}</strong>
+      <span class="stat-foot">查看全部 →</span>
+    </a>
+    <a class="stat-card" href="{{ url_for('admin.accounts', enabled='0') }}">
+      <span class="stat-label">已禁用</span>
+      <strong class="stat-value stat-warn">{{ acc_disabled }}</strong>
+      <span class="stat-foot">查看禁用 →</span>
+    </a>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>最近比赛</h2>
+      <a class="btn ghost" href="{{ url_for('admin.competitions') }}">全部比赛</a>
+    </div>
+    {% if recent %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>比赛名称</th><th>时间</th><th>参赛对象</th><th>比分</th><th>状态</th></tr></thead>
+        <tbody>
+          {% for row in recent %}
+          <tr>
+            <td class="cell-strong">{{ row.name }}</td>
+            <td>{{ row.match_time or '—' }}</td>
+            <td>{{ row.participants or '—' }}</td>
+            <td>{{ row.score or '—' }}</td>
+            <td><span class="tag tag-{{ 'running' if row.status == '进行中' else ('done' if row.status == '已结束' else 'idle') }}">{{ row.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="empty-state">暂无比赛记录，点击「新增比赛」开始维护。</p>
+    {% endif %}
+  </section>
+
+  <section class="quick-links">
+    <a class="quick-link" href="{{ url_for('admin.competition_new') }}"><strong>＋ 新增比赛</strong><span>录入名称、时间、参赛对象、比分与状态</span></a>
+    <a class="quick-link" href="{{ url_for('admin.account_new') }}"><strong>＋ 新增账号</strong><span>维护账号资料、角色与启用状态</span></a>
+  </section>
+{% endblock %}

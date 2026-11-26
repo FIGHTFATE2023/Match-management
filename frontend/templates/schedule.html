@@ -134,7 +134,6 @@
               <span class="finish-tag" data-role="match-tag">已完赛</span>
               <span class="finish-label" data-role="finish-label">累计比分</span>
               <strong class="finish-score" data-role="finish-score"></strong>
-              <span class="finish-net" data-role="finish-net" hidden></span>
             </div>
             <span class="count match-count">{{ m.games|length }} 局</span>
           </div>
@@ -180,6 +179,18 @@
                 <span class="score-target" data-role="score-target">目标 {{ 15 * g.no }} 分</span>
                 <div class="rally-grid" data-role="rally"></div>
               </div>
+              <div class="predict-strip" data-role="predict" hidden>
+                <div class="predict-bar" data-role="predict-bar" role="img" aria-label="双方竞猜分数比例">
+                  <span class="predict-seg is-red" data-role="bar-a"></span>
+                  <span class="predict-seg is-blue" data-role="bar-b"></span>
+                </div>
+                <div class="predict-legend">
+                  <span data-role="legend-a"></span>
+                  <span data-role="legend-b"></span>
+                </div>
+                <p class="predict-hint" data-role="predict-hint" hidden></p>
+              </div>
+              <p class="guess-result" data-role="guess-result" aria-live="polite" hidden></p>
               {% if ref in editable_refs %}
               {% set mine_a = identity.team == m.team_a %}
               {% set mine_lineup = g.lineup_a if mine_a else g.lineup_b %}
@@ -297,7 +308,7 @@
       {% endif %}
     </section>
 
-    <p class="footnote">追分版规则：同一场次的 6 局共用一份累计比分，比分跨局继承、绝不归零；每张卡片显示当前累计比分与本局目标分（15 / 30 / 45 / 60 / 75 / 90），任一方累计分先达到本局目标即结束该局。8 / 23 / 38 / 53 / 68 / 83 分时双方换边。场次开赛后标记「正在进行中」，6 局全部打完改为「已完赛」并显示最终累计比分与净胜分；不记录胜场、不设竞猜。</p>
+    <p class="footnote">追分版规则：同一场次的 6 局共用一份累计比分，比分跨局继承、绝不归零；每张卡片显示当前累计比分与本局目标分（15 / 30 / 45 / 60 / 75 / 90），任一方累计分先达到本局目标即结束该局。8 / 23 / 38 / 53 / 68 / 83 分时双方换边。场次开赛后标记「正在进行中」，6 局全部打完改为「已完赛」并显示最终累计比分。红蓝条表示双方竞猜分数比例（左红、右蓝）；竞猜按本小局率先新增十五分判定，裁判确认结束后结算。</p>
   </main>
   <script src="/static/sync.js?v={{ asset_v }}"></script>
   {% if not pending %}<script src="/static/schedule.js?v={{ asset_v }}"></script>{% endif %}

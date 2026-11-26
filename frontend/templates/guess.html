@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <script src="/static/nozoom.js?v={{ asset_v }}"></script>
+  <title>竞猜 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}">
+  <meta name="csrf-token" content="{{ csrf }}">
+</head>
+<body class="app-page guess-page">
+  <header class="topbar">
+    <div class="brand-inline">
+      <span class="brand-mark" aria-hidden="true">赛</span>
+      <span>比赛管理系统 · 竞猜</span>
+    </div>
+    <div class="topbar-actions">
+      <form method="post" action="/logout">
+        <button class="btn ghost" type="submit">退出登录</button>
+      </form>
+    </div>
+  </header>
+
+  <main class="page">
+    {% include "_nav.html" %}
+    <section class="hero">
+      <p class="hero-kicker">{{ identity.name }} 的竞猜</p>
+      <h1>比赛竞猜</h1>
+      <p class="hero-sub">赛程公布前可竞猜冠军组别（第一小局开赛后锁定）；赛程公布后再开放每一小局的先获十五分竞猜。</p>
+    </section>
+
+    <!-- 冠军组别竞猜：始终显示 -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>冠军组别竞猜</h2>
+        <span class="count" data-role="champion-count"{% if champion_locked %} hidden{% endif %}>每人限选 1 组</span>
+        <span class="champion-lock-tag" data-role="champion-lock-tag"{% if not champion_locked %} hidden{% endif %}>竞猜已锁定</span>
+      </div>
+      <p class="empty-hint" data-role="champion-hint-open"{% if champion_locked %} hidden{% endif %}>第一小局比赛开始前可竞猜冠军组别，可随时修改；点击卡片即选定你心目中的冠军组。</p>
+      <p class="empty-hint" data-role="champion-hint-locked"{% if not champion_locked %} hidden{% endif %}>第一小局比赛已开始，冠军组别竞猜已锁定，不能再选择或修改；你的选择是 <strong data-role="champion-pick-text">{{ champion_pick ~ ' 组' if champion_pick else '未选择' }}</strong>。</p>
+      <p class="empty-hint" id="guess-feedback" role="status" aria-live="polite"></p>
+      <div class="champion-grid{% if champion_locked %} is-locked{% endif %}" data-locked="{{ '1' if champion_locked else '0' }}">
+        {% for team in teams %}
+        <div class="champion-card {% if champion_pick == team %}is-picked{% endif %}{% if champion_locked %} is-locked{% endif %}"
+             data-pick="{{ team }}" role="button" tabindex="{{ '-1' if champion_locked else '0' }}"
+             {% if champion_locked %}aria-disabled="true" {% endif %}aria-pressed="{{ 'true' if champion_pick == team else 'false' }}">
+          <div class="champion-top">
+            <span class="champion-team">{{ team }} 组</span>
+            <span class="champion-current">我的选择</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- 小局竞猜：仅赛程公布后显示 -->
+    {% if published %}
+    <section class="panel">
+      <div class="panel-head">
+        <h2>小局竞猜</h2>
+        <span class="count">预测本局率先获得十五分的一方</span>
+      </div>
+      <p class="empty-hint">直接点击卡片上「你认为本局先获得十五分的一方」的选手区域即可完成竞猜；每局可随时改选，已选一方会高亮。点已选方的「取消」可撤回该局竞猜。比赛开始后该局竞猜自动锁定。</p>
+
+      <details class="rules-box">
+        <summary>计分规则说明</summary>
+        <div class="rules-body">
+          <p>竞猜下注分数（即计分公式里的<strong>基础分数</strong>）：<strong>学生与观众 1 分，老师 2 分</strong>。</p>
+          <p>每小局按本局新增得分判断：最先获得十五分的一方为预测成功，承接的累计分不计入。裁判确认本局结束后，猜中的人获得：<strong>基础分数 + 对方组押注分数之和 ÷ 己方押注人数</strong>，结果保留两位小数；猜错得 0 分，不扣分。</p>
+          <p>冠军组别竞猜猜中 <strong>+5 分</strong>，四组队长确认比赛结束后按最终榜单结算，并列冠军组均视为猜中，猜错不扣分；<strong>第一小局比赛开始后即锁定</strong>，不能再选择或修改。每个小局在各自开赛后不能再押注或改选。</p>
+        </div>
+      </details>
+
+      <div class="filter-row filter-search guess-search">
+        <label class="search-field">
+          <span class="sr-only">搜索对局、组别或选手姓名</span>
+          <input id="guess-q" type="search" placeholder="搜索对局、组别或选手姓名" autocomplete="off" spellcheck="false">
+        </label>
+        <span class="count" id="guess-count"></span>
+        <button class="btn ghost" type="button" id="guess-clear">清除</button>
+      </div>
+
+      <div id="match-list">
+        {% for m in schedule_matches %}
+        <section class="panel match-panel" data-teams="{{ m.team_a }} {{ m.team_b }}">
+          <div class="match-head">
+            <h2>{{ m.team_a }} 组 <em>VS</em> {{ m.team_b }} 组</h2>
+            <span class="count match-count">{{ m.games|length }} 局</span>
+          </div>
+          <div class="game-grid">
+            {% for g in m.games %}
+            {% set ref = m.match_id ~ '-' ~ g.no %}
+            <article class="game-card event-{{ g.event_key }} {% if ref in locked_refs %}is-locked{% endif %}"
+                     data-ref="{{ ref }}"
+                     data-locked="{{ '1' if ref in locked_refs else '0' }}"
+                     data-teams="{{ m.team_a }} {{ m.team_b }}"
+                     data-event="{{ g.event }}"
+                     data-search="{{ m.team_a }} 组 {{ m.team_b }} 组 {{ m.team_a }} {{ m.team_b }} {{ g.event }} {{ g.players_a|join(' ') }} {{ g.players_b|join(' ') }}">
+              <div class="game-card-head">
+                <span class="game-index">第 {{ g.no }} 局</span>
+                <span class="game-event">{{ g.event }}</span>
+                {% if ref in locked_refs %}<span class="game-state is-locked">竞猜已锁定</span>{% endif %}
+              </div>
+              <div class="game-card-body">
+                <div class="game-side {% if game_picks.get(ref) == m.team_a %}is-picked{% endif %}"
+                     data-ref="{{ ref }}" data-team="{{ m.team_a }}"
+                     role="button" tabindex="0" aria-pressed="{{ 'true' if game_picks.get(ref) == m.team_a else 'false' }}">
+                  <div class="side-head">
+                    <span class="side-team">{{ m.team_a }} 组</span>
+                    <span class="side-picked">已选</span>
+                    <button class="side-cancel" type="button" data-ref="{{ ref }}" data-team="{{ m.team_a }}" aria-label="取消该局竞猜">取消</button>
+                  </div>
+                  {% for name in g.players_a %}
+                  <span class="side-player">{{ name }}</span>
+                  {% else %}
+                  <span class="side-player is-missing">待安排</span>
+                  {% endfor %}
+                </div>
+                <span class="game-vs">VS</span>
+                <div class="game-side game-side-right {% if game_picks.get(ref) == m.team_b %}is-picked{% endif %}"
+                     data-ref="{{ ref }}" data-team="{{ m.team_b }}"
+                     role="button" tabindex="0" aria-pressed="{{ 'true' if game_picks.get(ref) == m.team_b else 'false' }}">
+                  <div class="side-head">
+                    <span class="side-team">{{ m.team_b }} 组</span>
+                    <span class="side-picked">已选</span>
+                    <button class="side-cancel" type="button" data-ref="{{ ref }}" data-team="{{ m.team_b }}" aria-label="取消该局竞猜">取消</button>
+                  </div>
+                  {% for name in g.players_b %}
+                  <span class="side-player">{{ name }}</span>
+                  {% else %}
+                  <span class="side-player is-missing">待安排</span>
+                  {% endfor %}
+                </div>
+              </div>
+              <p class="guess-result" data-role="guess-result" aria-live="polite">{% if ref in locked_refs %}竞猜已锁定，等待比赛结果{% else %}开赛前可选择或修改{% endif %}</p>
+            </article>
+            {% endfor %}
+          </div>
+        </section>
+        {% endfor %}
+        <p class="empty-hint filter-empty" id="guess-empty" hidden>没有符合条件的对局，换个关键词或清除试试。</p>
+      </div>
+    </section>
+    {% else %}
+    <section class="panel">
+      <div class="panel-head">
+        <h2>小局竞猜</h2>
+        <span class="count">待开放</span>
+      </div>
+      <p class="empty-hint">四组排兵需全部由队长发布后才会公布赛程，届时开放每一小局的先获十五分竞猜。当前进度：{{ status.values()|selectattr('published')|list|length }} / 4 组已发布。</p>
+    </section>
+    {% endif %}
+
+    <p class="footnote">竞猜结果以实际比赛为准，本功能仅作趣味互动。</p>
+  </main>
+
+  <script src="/static/sync.js?v={{ asset_v }}"></script>
+  <script src="/static/guess.js?v={{ asset_v }}"></script>
+  <script src="/static/guess-live.js?v={{ asset_v }}"></script>
+</body>
+</html>

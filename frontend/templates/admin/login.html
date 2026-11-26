@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>后台登录 · 比赛管理系统</title>
+  <link rel="stylesheet" href="/static/admin.css?v={{ asset_v }}">
+</head>
+<body class="admin-login-page">
+  <main class="admin-login-card">
+    <div class="admin-brand admin-brand-center">
+      <span class="admin-brand-mark" aria-hidden="true">管</span>
+      <div>
+        <strong>后台管理</strong>
+        <small>直接维护前台真实比赛与名单</small>
+      </div>
+    </div>
+
+    {% if error %}<div class="flash flash-error" role="alert"><span class="flash-icon">!</span><span>{{ error }}</span></div>{% endif %}
+
+    <form method="post" action="{{ url_for('admin.login') }}" class="admin-login-form">
+      <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+      <label class="field">
+        <span>管理员账号</span>
+        <input type="text" name="username" autocomplete="username" placeholder="admin" required autofocus>
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input type="password" name="password" autocomplete="current-password" placeholder="请输入密码" required>
+      </label>
+      <button class="btn primary btn-block" type="submit">登录后台</button>
+    </form>
+    <p class="admin-login-hint">默认账号 admin / admin123，登录后请及时修改密码或限制访问范围。</p>
+    <a class="admin-back-link" href="/">← 返回前台</a>
+  </main>
+</body>
+</html>

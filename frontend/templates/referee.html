@@ -48,6 +48,7 @@
       {% include "_scoring_panel.html" %}
       {% endif %}
 
+      {% if groups %}
       <section class="panel">
         <div class="panel-head">
           <h2>选择要记分的局</h2>
@@ -84,6 +85,7 @@
         </div>
         {% endfor %}
       </section>
+      {% endif %}
     {% endif %}
 
     <p class="footnote">追分版：第 1 局从 0:0 打到任一方 15 分结束；第 2 局继承该比分继续打到 30 分，依次到 90 分整场完赛。落后方也必须自己把累计分追到本局目标才可能结束本局。达到本局换边点（8 / 23 / 38 / 53 / 68 / 83）时提示双方换边；不记录胜场。</p>

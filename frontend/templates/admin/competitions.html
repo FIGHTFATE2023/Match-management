@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% block title %}比赛数据管理{% endblock %}
+{% block crumb %}比赛数据管理{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>比赛数据管理</h1>
+      <p>这里管理的是前台赛程使用的真实比赛；可按名称、对阵、比分搜索并按状态筛选。</p>
+    </div>
+    <a class="btn primary" href="{{ url_for('admin.competition_new') }}">＋ 新增比赛</a>
+  </section>
+
+  <section class="panel">
+    <form class="filter-bar" method="get" action="{{ url_for('admin.competitions') }}">
+      <label class="filter-field filter-grow">
+        <span>关键词</span>
+        <input type="search" name="q" value="{{ q }}" placeholder="比赛名称 / 对阵 / 比分">
+      </label>
+      <label class="filter-field">
+        <span>状态</span>
+        <select name="status">
+          <option value="">全部状态</option>
+          {% for s in status_choices %}
+            <option value="{{ s }}"{% if status == s %} selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn" type="submit">搜索</button>
+      <a class="btn ghost" href="{{ url_for('admin.competitions') }}">重置</a>
+    </form>
+
+    <div class="result-bar">
+      <span>共 <strong>{{ total }}</strong> 场真实比赛{% if q or status %}（已筛选）{% endif %}</span>
+      <span>第 {{ page }} / {{ pages }} 页</span>
+    </div>
+
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>ID</th><th>比赛名称</th><th>时间</th><th>参赛对象</th><th>累计比分</th><th>计分状态</th><th>管理状态</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="cell-id">#{{ row.id }}</td>
+            <td class="cell-strong">{{ row.name }}</td>
+            <td>{{ row.match_time or '—' }}</td>
+            <td>{{ row.participants }}</td>
+            <td class="cell-score">{{ row.score }}</td>
+            <td><span class="tag tag-{{ 'done' if row.real_state == '已结束' else ('running' if row.real_state == '进行中' else 'idle') }}">{{ row.real_state }}</span></td>
+            <td><span class="tag tag-{{ 'done' if row.status == '已结束' else ('running' if row.status == '进行中' else ('cancel' if row.status == '已取消' else 'idle')) }}">{{ row.status }}</span></td>
+            <td class="cell-actions">
+              <a class="link-btn" href="{{ url_for('admin.competition_edit', cid=row.id) }}">编辑</a>
+              <form method="post" action="{{ url_for('admin.competition_delete', cid=row.id) }}" class="inline-form">
+                <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+                <button class="link-btn link-danger" type="submit"
+                        data-confirm-click="确认删除比赛「{{ row.name }}」及其全部计分记录？此操作不可恢复。">删除</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="empty-state">没有符合条件的比赛，试试调整筛选条件或新增一场。</p>
+    {% endif %}
+
+    {% if pages > 1 %}
+    <nav class="pager" aria-label="分页">
+      {% if page > 1 %}<a class="btn ghost" href="{{ url_for('admin.competitions', q=q, status=status, page=page-1) }}">上一页</a>{% endif %}
+      <span class="pager-current">{{ page }} / {{ pages }}</span>
+      {% if page < pages %}<a class="btn ghost" href="{{ url_for('admin.competitions', q=q, status=status, page=page+1) }}">下一页</a>{% endif %}
+    </nav>
+    {% endif %}
+  </section>
+{% endblock %}

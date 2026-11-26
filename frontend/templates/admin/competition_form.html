@@ -1,0 +1,83 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ '编辑比赛' if mode == 'edit' else '新增比赛' }}{% endblock %}
+{% block crumb %}{{ '编辑比赛' if mode == 'edit' else '新增比赛' }}{% endblock %}
+
+{% block content %}
+  <section class="admin-page-head">
+    <div>
+      <h1>{{ '编辑比赛' if mode == 'edit' else '新增比赛' }}</h1>
+      <p>带 <em>*</em> 为必填项；保存后前台赛程会自动刷新。</p>
+    </div>
+    <a class="btn ghost" href="{{ url_for('admin.competitions') }}">← 返回列表</a>
+  </section>
+
+  <section class="panel form-panel">
+    {% if mode == 'edit' %}
+    <div class="readonly-note">
+      累计比分 <strong>{{ data.score }}</strong> · 计分状态 <strong>{{ data.real_state }}</strong>
+      —— 比分由裁判逐分记录产生，此处不提供直接改分，以保证计分流水与比分一致。
+    </div>
+    {% endif %}
+
+    <form method="post" class="edit-form"
+          {% if mode == 'edit' %}data-confirm="确认保存对「{{ data.name }}」的修改？"{% endif %}>
+      <input type="hidden" name="csrf" value="{{ admin_csrf }}">
+      {% if mode == 'edit' %}<input type="hidden" name="id" value="{{ data.id }}">{% endif %}
+
+      <label class="field">
+        <span>比赛名称 <em>*</em></span>
+        <input type="text" name="name" value="{{ data.name }}" maxlength="120" required placeholder="例如：第1轮 · A组 vs B组">
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>比赛时间</span>
+          <input type="text" name="match_time" value="{{ data.match_time }}" maxlength="100" placeholder="例如：2026-11-25 10:00">
+        </label>
+        <label class="field">
+          <span>管理状态</span>
+          <select name="status">
+            {% for s in status_choices %}
+              <option value="{{ s }}"{% if data.status == s %} selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>参赛组 A <em>*</em></span>
+          <select name="team_a">
+            {% for t in team_choices %}
+              <option value="{{ t }}"{% if data.team_a == t %} selected{% endif %}>{{ t }} 组</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>参赛组 B <em>*</em></span>
+          <select name="team_b">
+            {% for t in team_choices %}
+              <option value="{{ t }}"{% if data.team_b == t %} selected{% endif %}>{{ t }} 组</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>轮次 <em>*</em></span>
+          <input type="number" name="round_no" min="1" value="{{ data.round_no }}" required>
+        </label>
+        <label class="field">
+          <span>场地 <em>*</em></span>
+          <input type="number" name="court" min="1" value="{{ data.court }}" required>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">{{ '确认保存' if mode == 'edit' else '确认新增' }}</button>
+        <a class="btn ghost" href="{{ url_for('admin.competitions') }}">取消</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

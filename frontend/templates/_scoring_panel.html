@@ -38,6 +38,13 @@
   </div>
   {% endif %}
 
+  {% if not active.is_custom and active.serve %}
+  <div class="serve-hint" data-role="serve-hint" role="status">
+    <span class="serve-tag">发球提示</span>
+    <strong data-role="serve-text">{{ active.serve.text }}</strong>
+  </div>
+  {% endif %}
+
   {% if active.can_score %}
   <div class="score-buttons {% if active.switched %}is-swapped{% endif %}" id="score-buttons">
     <button class="score-btn" type="button" data-team="{{ active.team_a }}">

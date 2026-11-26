@@ -111,6 +111,7 @@
   const scoreA = document.getElementById('score-a');
   const scoreB = document.getElementById('score-b');
   const hint = document.getElementById('score-hint');
+  const serveText = document.querySelector('[data-role="serve-hint"] [data-role="serve-text"]');
   const buttons = document.getElementById('score-buttons');
   const undoBtn = document.getElementById('undo-btn');
   // 自定义对局不设换边，但达到目标分同样需要二次确认；两种模式共用结束弹窗。
@@ -184,6 +185,8 @@
     }
     if (scoreA) scoreA.textContent = res.score_a;
     if (scoreB) scoreB.textContent = res.score_b;
+    // 发球 / 换边提示随最近两分实时刷新（自定义对局不设此提示）。
+    if (!isCustom && serveText && res.serve && res.serve.text) serveText.textContent = res.serve.text;
     if (hint) hint.textContent = okText;
     if (isCustom) {
       // 达标后只进入待确认：确认才结束入榜，返回后可继续回退重记。
