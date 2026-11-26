@@ -1305,7 +1305,7 @@ _score_lock = threading.RLock()
 def save_guess(name: str, kind: str, ref: str, pick: str, stake: int = 1) -> bool:
     """写入（或覆盖）某用户的单条竞猜，并快照该用户的下注分数。
 
-    stake（所有人一律 1）同时是竞猜计分公式里的「基础分数」。
+    stake（所有人基础分为 1分）同时是竞猜计分公式里的「基础分数」。
     同一 (name, kind, ref) 只保留最新一次。
     """
     now = _now()
